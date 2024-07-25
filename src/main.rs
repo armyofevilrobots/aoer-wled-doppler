@@ -1,38 +1,22 @@
-use log::{self, debug, error, info, warn, SetLoggerError};
+use anyhow::{anyhow, Result};
+use fern::colors::{Color, ColoredLevelConfig};
+use log::{self, debug, error, info, trace, warn, SetLoggerError};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
 use std::time::Duration;
 use wled_json_api_library::structures::state::State;
 mod types;
 mod util;
+mod config;
 use types::*;
 use util::*;
+use config::*;
 
 const SERVICE_NAME: &'static str = "_wled._tcp.local.";
 
-fn configure_logging(loglevel: log::LevelFilter) {
-    // Configure logger at runtime
-    fern::Dispatch::new()
-        // Perform allocation-free log formatting
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                humantime::format_rfc3339(std::time::SystemTime::now()),
-                record.level(),
-                record.target(),
-                message
-            ))
-        })
-        .level(loglevel)
-        .level_for("mdns_sd", log::LevelFilter::Warn)
-        .chain(std::io::stdout())
-        .apply()
-        .unwrap();
-}
-
 fn main() {
-    configure_logging(log::LevelFilter::Debug);
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
+    /*
     let svc_config: Config = Config {
         lat: 49.4,
         lon: -123.7,
@@ -43,7 +27,24 @@ fn main() {
             ("wled-derek-desk._wled._tcp.local.".to_string(), (1, 30)),
         ]), //HashMap::new(),
         transition_duration: 3600i64,
+        loglevel: 4,
+    };*/
+    let svc_config = match load_config(){
+        Ok(config) => config,
+        Err(err) => panic!("Failed to load config: {:?}", err),
     };
+    let levels = vec![
+        log::LevelFilter::Off,
+        log::LevelFilter::Error,
+        log::LevelFilter::Warn,
+        log::LevelFilter::Info,
+        log::LevelFilter::Debug,
+    ];
+    configure_logging(
+        *levels
+            .get(svc_config.loglevel)
+            .unwrap_or(&log::LevelFilter::Info),
+    );
 
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
@@ -57,7 +58,7 @@ fn main() {
                         let _ = update_wled_cache(&info, &mut found_wled); // TODO: Fix this<--
                     }
                     other_event => {
-                        warn!("At {:?} : {:?}", now.elapsed(), &other_event);
+                        trace!("At {:?} : {:?}", now.elapsed(), &other_event);
                     }
                 }
             }
@@ -71,38 +72,25 @@ fn main() {
             svc_config.transition_duration,
         );
         debug!("Dim out is: {}", dim_pc);
+        let mut leds_ok: usize = 0;
         for (name, wled) in found_wled.iter_mut() {
             if let Some((low, high)) = svc_config.brightnesses.get(name) {
                 let gap = (high - low) as f32;
                 let new_bri = (*high as f32 - (dim_pc * gap)).min(255.).max(0.) as u8;
-                debug!(" - Found WLED to dim: {} -> ({},{}) to {}", name, low, high, new_bri);
-
-                wled.wled.state = Some(State {
-                    on: Some(true),
-                    bri: Some(new_bri),
-                    transition: None,
-                    tt: None,
-                    ps: None,
-                    psave: None,
-                    pl: None,
-                    nl: None,
-                    udpn: None,
-                    v: None,
-                    rb: None,
-                    live: None,
-                    lor: None,
-                    time: None,
-                    mainseg: None,
-                    playlist: None,
-                    seg: None,
-                });
-                if let Ok(response) = wled.wled.flush_state() {
-                    debug!(
-                        "    - HTTP response: {:?}",
-                        response.text().unwrap_or("UNKNOWN ERROR".to_string())
-                    );
+                debug!(
+                    " - Found WLED to dim: {} -> ({},{}) to {}",
+                    name, low, high, new_bri
+                );
+                let result = led_set_brightness(wled, new_bri);
+                if result.is_ok() {
+                    leds_ok += 1;
                 }
             }
+        }
+        if leds_ok == found_wled.len() {
+            info!("{} out of {} WLEDs updated OK.", leds_ok, found_wled.len());
+        } else {
+            warn!("{} out of {} WLEDs updated OK.", leds_ok, found_wled.len());
         }
 
         std::thread::sleep(Duration::from_secs(10));

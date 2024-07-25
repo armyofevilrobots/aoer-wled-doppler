@@ -1,21 +1,89 @@
 use crate::types::*;
 use anyhow::{anyhow, Result};
 use chrono::Datelike;
-use log::{self, debug, error, info, warn, SetLoggerError};
+use fern::colors::{Color, ColoredLevelConfig};
+use log::{self, debug, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
-// fn bootstrap() -> Result<()> {
-//     let homedir: PathBuf = dirs::home_dir()?;
-//     Ok(())
-// }
+
+pub fn configure_logging(loglevel: log::LevelFilter) {
+    // Configure logger at runtime
+    let colors = ColoredLevelConfig::new().debug(Color::Magenta);
+    fern::Dispatch::new()
+        // Perform allocation-free log formatting
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{} {} {}] {}",
+                humantime::format_rfc3339(std::time::SystemTime::now()),
+                colors.color(record.level()),
+                record.target(),
+                message
+            ))
+        })
+        .level(loglevel)
+        .level_for("mdns_sd", log::LevelFilter::Warn)
+        .level_for("reqwest", log::LevelFilter::Warn)
+        .chain(std::io::stdout())
+        .apply()
+        .unwrap();
+}
+
+
+/// Set the brightness of the given wled device.
+pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
+    wled.wled.state = Some(State {
+        on: Some(true),
+        bri: Some(new_bri),
+        transition: None,
+        tt: None,
+        ps: None,
+        psave: None,
+        pl: None,
+        nl: None,
+        udpn: None,
+        v: None,
+        rb: None,
+        live: None,
+        lor: None,
+        time: None,
+        mainseg: None,
+        playlist: None,
+        seg: None,
+    });
+    match wled.wled.flush_state() {
+        Ok(response) => {
+            trace!(
+                "    - HTTP response: {:?}",
+                response.text().unwrap_or("UNKNOWN ERROR".to_string())
+            );
+            Ok(())
+        }
+        Err(err) => {
+            error!(
+                "    - Failed to update WLED: '{}' with error: {:?}",
+                &wled.name, err
+            );
+            Err(anyhow!(
+                "Failed to update wled {} with error {:?}",
+                &wled.name,
+                err
+            ))
+        }
+    }
+}
 
 pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WLED>) -> Result<()> {
     let full_name = info.get_fullname().to_string();
-    if !found_wled.contains_key(&full_name) {
+    let old_wled = found_wled.get(&full_name);
+    if old_wled.is_none() || (!info.get_addresses().contains(&old_wled.unwrap().address)) {
+        if old_wled.is_some() {
+            warn!("WLED '{}' may have changed IPs. Updating.", full_name);
+        }
         let mut ip_addr: Option<IpAddr> = None;
         for try_ip in info.get_addresses() {
             let url: Url =
@@ -64,8 +132,8 @@ pub fn calc_dim_pc(
         today_date.month(),
         today_date.day(),
     );
-    info!("Sunrise, Sunset: {:?}, {:?}", sunrise_time, sunset_time);
-    info!(
+    debug!("Sunrise, Sunset: {:?}, {:?}", sunrise_time, sunset_time);
+    debug!(
         "Current unix time: {} and sunset is in {} seconds",
         today.timestamp(),
         sunset_time - today.timestamp()

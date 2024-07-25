@@ -21,4 +21,5 @@ pub struct Config {
     pub exclusions: Vec<String>,
     pub brightnesses: HashMap<String, (u8, u8)>,
     pub transition_duration: i64, // How long it takes to go full dim from full bright
+    pub loglevel: usize, //0: off, 1: error, 2: warn, 3: info, 4: debug, 5: pedantic
 }
