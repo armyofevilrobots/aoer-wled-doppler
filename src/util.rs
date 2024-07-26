@@ -7,7 +7,6 @@ use log::{self, debug, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::path::PathBuf;
 use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
@@ -25,7 +24,7 @@ pub fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
                 .format(move |out, message, record| {
                     out.finish(format_args!(
                         "[{} {} {}] {}",
-                        humantime::format_rfc3339(std::time::SystemTime::now()),
+                        humantime::format_rfc3339_seconds(std::time::SystemTime::now()),
                         colors.color(record.level()),
                         record.target(),
                         message
@@ -113,7 +112,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
         if old_wled.is_some() {
             warn!("WLED '{}' may have changed IPs. Updating.", full_name);
         }
-        let mut ip_addr: Option<IpAddr> = None;
+        // let ip_addr: Option<IpAddr> = None;
         for try_ip in info.get_addresses() {
             let url: Url =
                 Url::try_from(format!("http://{}:{}/", try_ip, info.get_port()).as_str())
@@ -175,7 +174,7 @@ pub fn calc_dim_pc(
     } else if today.timestamp() > (sunset_time - transition_duration)
         && today.timestamp() < sunset_time
     {
-        info!("TWilight.");
+        info!("Twilight.");
         // OK, we're dimming
         (today.timestamp() - (sunset_time - transition_duration)) as f32
             / transition_duration as f32

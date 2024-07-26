@@ -1,0 +1,15 @@
+[Unit]
+Description=WLED-doppler night-shift style LED dimmer
+#Requires=display-server.target
+After=network.target sound.target 
+#display-server.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart=/home/derek/.cargo/bin/aoer-wled-doppler
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+[Install]
+Alias=session-manager.service

@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-use std::io::Write;
-use std::path::PathBuf;
-
 /// Manages the configuration; related tools.
+use std::collections::HashMap;
+use std::path::PathBuf;
 use crate::types::*;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 fn calc_config_dir() -> PathBuf {
     let mut homedir = dirs::home_dir().expect("Must have a $HOME dir set to run.");
@@ -36,11 +34,8 @@ fn bootstrap() -> Result<PathBuf> {
             loglevel: 4,
             logfile: None,
         };
-        let mut cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
+        let cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
             .expect("Wups, my default config is borked?!");
-        // let mut cfgfile = std::fs::File::create(&cfgpath)?;
-        // cfgfile.write_all(cfgstr.as_bytes())?;
-        // cfgfile.flush()?;
         std::fs::write(&cfgpath, cfgstr.as_bytes())?
     }
 
