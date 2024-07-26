@@ -55,6 +55,7 @@ pub fn load_config() -> Result<Config> {
 }
 
 #[cfg(test)]
+/* These tests are f%^(@*# awful, because they mutate files. */
 mod tests {
     use super::*;
     use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};

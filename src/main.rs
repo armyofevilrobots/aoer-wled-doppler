@@ -16,19 +16,6 @@ const SERVICE_NAME: &'static str = "_wled._tcp.local.";
 
 fn main() {
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
-    /*
-    let svc_config: Config = Config {
-        lat: 49.4,
-        lon: -123.7,
-        exclusions: Vec::new(),
-        brightnesses: HashMap::from([
-            ("wled-vu-strip._wled._tcp.local.".to_string(), (1, 10)),
-            ("wled-derek-matrix-1._wled._tcp.local.".to_string(), (1, 5)),
-            ("wled-derek-desk._wled._tcp.local.".to_string(), (1, 30)),
-        ]), //HashMap::new(),
-        transition_duration: 3600i64,
-        loglevel: 4,
-    };*/
     let svc_config = match load_config(){
         Ok(config) => config,
         Err(err) => panic!("Failed to load config: {:?}", err),
