@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use std::net::IpAddr;
 use wled_json_api_library::wled::Wled;
 use wled_json_api_library::structures::cfg::Cfg;
@@ -22,4 +22,10 @@ pub struct Config {
     pub brightnesses: HashMap<String, (u8, u8)>,
     pub transition_duration: i64, // How long it takes to go full dim from full bright
     pub loglevel: usize, //0: off, 1: error, 2: warn, 3: info, 4: debug, 5: pedantic
+    #[serde(default = "default_logfile")]
+    pub logfile: Option<PathBuf>,
+}
+
+fn default_logfile()->Option<PathBuf>{
+    None
 }

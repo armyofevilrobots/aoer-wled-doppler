@@ -2,37 +2,66 @@ use crate::types::*;
 use anyhow::{anyhow, Result};
 use chrono::Datelike;
 use fern::colors::{Color, ColoredLevelConfig};
+use fern::log_file;
 use log::{self, debug, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
-
-pub fn configure_logging(loglevel: log::LevelFilter) {
+pub fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
     // Configure logger at runtime
     let colors = ColoredLevelConfig::new().debug(Color::Magenta);
-    fern::Dispatch::new()
-        // Perform allocation-free log formatting
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                humantime::format_rfc3339(std::time::SystemTime::now()),
-                colors.color(record.level()),
-                record.target(),
-                message
-            ))
-        })
+    let fernlog = fern::Dispatch::new()
         .level(loglevel)
         .level_for("mdns_sd", log::LevelFilter::Warn)
         .level_for("reqwest", log::LevelFilter::Warn)
-        .chain(std::io::stdout())
-        .apply()
-        .unwrap();
-}
+        .chain(
+            fern::Dispatch::new()
+                // Perform allocation-free log formatting
+                .format(move |out, message, record| {
+                    out.finish(format_args!(
+                        "[{} {} {}] {}",
+                        humantime::format_rfc3339(std::time::SystemTime::now()),
+                        colors.color(record.level()),
+                        record.target(),
+                        message
+                    ))
+                })
+                .chain(std::io::stdout()),
+        );
 
+    let fernlog = if let Some(logpath) = logfile {
+        info!("Logging to '{:?}'", logpath);
+        fernlog.chain(
+            fern::Dispatch::new()
+                // Perform allocation-free log formatting
+                .format(move |out, message, record| {
+                    out.finish(format_args!(
+                        "[{} {} {}] {}",
+                        humantime::format_rfc3339(std::time::SystemTime::now()),
+                        record.level(),
+                        record.target(),
+                        message
+                    ))
+                })
+                .level(loglevel)
+                .level_for("mdns_sd", log::LevelFilter::Warn)
+                .level_for("reqwest", log::LevelFilter::Warn)
+                .chain(
+                    log_file(&logpath)
+                        .expect(format!("Could not use log file path {:?}", &logpath).as_str()),
+                ),
+        )
+    } else {
+        fernlog
+    };
+
+    fernlog.apply().unwrap();
+}
 
 /// Set the brightness of the given wled device.
 pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {

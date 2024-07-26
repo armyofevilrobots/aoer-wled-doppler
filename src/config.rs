@@ -34,6 +34,7 @@ fn bootstrap() -> Result<PathBuf> {
             brightnesses: HashMap::new(),
             transition_duration: 3600i64,
             loglevel: 4,
+            logfile: None,
         };
         let mut cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
             .expect("Wups, my default config is borked?!");

@@ -33,6 +33,7 @@ fn main() {
         Ok(config) => config,
         Err(err) => panic!("Failed to load config: {:?}", err),
     };
+    
     let levels = vec![
         log::LevelFilter::Off,
         log::LevelFilter::Error,
@@ -44,6 +45,7 @@ fn main() {
         *levels
             .get(svc_config.loglevel)
             .unwrap_or(&log::LevelFilter::Info),
+        svc_config.logfile
     );
 
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
