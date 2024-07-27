@@ -7,9 +7,11 @@ use std::time::Duration;
 mod types;
 mod util;
 mod config;
+mod spotify;
 use types::*;
 use util::*;
 use config::*;
+use spotify::*;
 
 const SERVICE_NAME: &'static str = "_wled._tcp.local.";
 
@@ -63,7 +65,7 @@ fn main() {
             svc_config.lon as f64,
             svc_config.transition_duration,
         );
-        debug!("Dim out is: {}%", (dim_pc*100.) as usize);
+        debug!("Dimming is: {}%", (dim_pc*100.) as usize);
         let mut leds_ok: usize = 0;
         for (name, wled) in found_wled.iter_mut() {
             let new_bri = if let Some((low, high)) = svc_config.brightnesses.get(name) {

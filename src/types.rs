@@ -14,7 +14,14 @@ pub struct WLED {
 }
 
 #[derive(Debug)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SpotifyConfig{
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+#[derive(Debug)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub lat: f32,
     pub lon: f32,
@@ -24,6 +31,9 @@ pub struct Config {
     pub loglevel: usize, //0: off, 1: error, 2: warn, 3: info, 4: debug, 5: pedantic
     #[serde(default = "default_logfile")]
     pub logfile: Option<PathBuf>,
+    pub spotify_config: Option<SpotifyConfig>,
+
+        
 }
 
 fn default_logfile()->Option<PathBuf>{
