@@ -43,7 +43,8 @@ Below is a simple guide to the settings:
             input_device: "default", //iec958:CARD=J380,DEV=0",
             jack: false,  // I've not tested jack integration. YMMV.
         )),
-    ledfx_url: Some("http://localhost:8888")  // If set to None, ledfx won't be modified.
+    ledfx_url: Some("http://localhost:8888"), // If set to None, ledfx won't be modified.
+    ledfx_idle_cycles: Some(5), // How many 10 second cycles of silence before pausing ledfx 
 
 )
 

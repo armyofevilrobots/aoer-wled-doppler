@@ -44,6 +44,7 @@ pub struct Config {
     pub logfile: Option<PathBuf>,
     pub audio_config: Option<AudioConfig>,
     pub ledfx_url: Option<String>,
+    pub ledfx_idle_cycles: Option<usize>
 }
 
 fn default_logfile()->Option<PathBuf>{

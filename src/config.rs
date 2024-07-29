@@ -35,6 +35,7 @@ fn bootstrap() -> Result<PathBuf> {
             logfile: None,
             audio_config: None,
             ledfx_url: None,
+            ledfx_idle_cycles: Some(3),
         };
         let cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
             .expect("Wups, my default config is borked?!");
