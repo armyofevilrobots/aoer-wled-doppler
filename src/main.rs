@@ -3,13 +3,19 @@ use log::trace;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use wled_json_api_library::structures::cfg::cfg_def::Def;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
 use std::time::Duration;
 mod types;
 mod util;
 mod config;
+mod monitor;
+mod ledfx;
 use types::*;
 use util::*;
 use config::*;
+use ledfx::playpause;
 
 const SERVICE_NAME: &'static str = "_wled._tcp.local.";
 
@@ -32,17 +38,48 @@ fn main() {
         *levels
             .get(svc_config.loglevel)
             .unwrap_or(&log::LevelFilter::Info),
-        svc_config.logfile
+        svc_config.logfile.clone()
     );
     info!("==========================================================");
     info!("= aoer-wled-doppler starting. Scanning for WLED devices...");
     info!("==========================================================");
+    info!("Loaded config: {:?}", &svc_config);
 
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
+
+    // OK, now we setup the monitoring...
+    let (stream,playing_arc) = if let Some(audio_config) = svc_config.audio_config{
+        let (mon,playing_arc) = monitor::setup_audio(&audio_config).unwrap();
+        (Some(mon), playing_arc)
+    }else{
+        (None, Arc::new(AtomicBool::new(false)))
+    };
+
+    let mut quiet_cycles: usize=0;
     loop {
         let now = std::time::Instant::now();
+        if playing_arc.load(Relaxed){
+            debug!("arc says we are playing.");
+            quiet_cycles = 0;
+        }else{
+            debug!("arc says we are quiet.");
+            quiet_cycles = (quiet_cycles+1).max(3); // Totally arbitrary
+        }
+        
+        if let Some(baseurl) = &svc_config.ledfx_url{
+            debug!("Got LEDFX url of {}", baseurl);
+            if quiet_cycles >= 2{ // Again, arbitrary
+                debug!("We have been quiet for a couple cycles.");
+                playpause(baseurl.as_str(), true);
+            }else{
+                debug!("We have NOT been quiet for a couple cycles. Showing LEDFX.");
+                playpause(baseurl.as_str(), false);
+            }
+        }else{
+            debug!("No LEDFX url found. Skipping updates.");
+        }
         while !receiver.is_empty() {
             if let Ok(event) = receiver.recv() {
                 match event {

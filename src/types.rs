@@ -13,6 +13,24 @@ pub struct WLED {
     pub wled: Wled,
 }
 
+
+#[derive(Debug)]
+#[derive(Serialize, Deserialize)]
+pub struct AudioConfig{
+    #[serde(default = "default_input_device")]
+    pub input_device: String,
+    #[serde(default = "default_jack")]
+    pub jack: bool,
+}
+
+fn default_input_device()->String{
+    "default".to_string()
+}
+
+fn default_jack()->bool{
+    false
+}
+
 #[derive(Debug)]
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -24,6 +42,8 @@ pub struct Config {
     pub loglevel: usize, //0: off, 1: error, 2: warn, 3: info, 4: debug, 5: pedantic
     #[serde(default = "default_logfile")]
     pub logfile: Option<PathBuf>,
+    pub audio_config: Option<AudioConfig>,
+    pub ledfx_url: Option<String>,
 }
 
 fn default_logfile()->Option<PathBuf>{
