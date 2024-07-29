@@ -1,6 +1,8 @@
 aoer-wled-doppler
 =================
 
+![](web/doppler-wall-animated.webp)
+
 WLED-doppler provides a `--user` system service which monitors the current time of day
 and sets the dimming levels of WLED devices accordingly. It is location configured,
 and automatically calculates sunrise/sunset. You can configure the time period over
