@@ -67,3 +67,4 @@ systemctl --user start wled-doppler
 *Note:* There is some nominal multi-platform support in this codebase, but it has not been
 tested outside of Linux (specifically Ubuntu/PopOS 22.04). I made this thing to scratch my
 own itch, but it might be useful for other people with a little elbow grease.
+Build automation is coming soon.
