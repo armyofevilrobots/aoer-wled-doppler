@@ -51,7 +51,7 @@ jobs:
     - name: move build
       run: mv ./target/release/aoer-wled-doppler ./
     - name: Zip
-      run: zip -r ${{ github.event.repository.name }}-${{ vars.RUNNER_OS }}-${{ vars.RUNNER_ARCH }}.zip README.md systemd/wled-doppler.service aoer-wled-doppler
+      run: zip -r ${{ github.event.repository.name }}-${{ runner.os }}-${{ runner.arch }}.zip README.md systemd/wled-doppler.service aoer-wled-doppler
     - name: Upload Release Asset
       id: upload-release-asset 
       uses: actions/upload-release-asset@v1
@@ -60,6 +60,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./${{ github.event.repository.name }}-${{ vars.RUNNER_OS }}-${{ vars.RUNNER_ARCH }}.zip
-        asset_name: ${{ github.event.repository.name }}-${{ vars.RUNNER_OS }}-${{ vars.RUNNER_ARCH }}.zip
+        asset_path: ./${{ github.event.repository.name }}-${{ runner.os }}-${{ runner.arch }}.zip
+        asset_name: ${{ github.event.repository.name }}-${{ runner.os }}-${{ runner.arch }}.zip
         asset_content_type: application/zip
