@@ -1,9 +1,7 @@
-use std::{borrow::BorrowMut, sync::{atomic::{AtomicBool, Ordering::Relaxed}, Arc}};
-
+use std::sync::{atomic::{AtomicBool, Ordering::Relaxed}, Arc};
 use cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Stream};
 use log::{error,warn,info,debug,trace};
-use crate::types::{Config, AudioConfig};
-use crate::configure_logging;
+use crate::types::AudioConfig;
 
 
 
@@ -11,7 +9,7 @@ pub fn setup_audio(audio_config: &AudioConfig)->anyhow::Result<(Stream, Arc<Atom
     // Conditionally compile with jack if the feature is specified.
     warn!("Setting up audio monitor...");
     error!("Something");
-    let mut playing: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let playing: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     #[cfg(all(
         any(
             target_os = "linux",
@@ -63,7 +61,7 @@ pub fn setup_audio(audio_config: &AudioConfig)->anyhow::Result<(Stream, Arc<Atom
 
     info!("Using input device: \"{}\"", input_device.name()?); 
     let config: cpal::StreamConfig = input_device.default_input_config()?.into();
-    let mut upd_playing = playing.clone();
+    let upd_playing = playing.clone();
     let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
         let mut rms_sum: f32 = 0.;
         let rms_len: usize = data.len();

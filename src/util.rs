@@ -128,7 +128,6 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
                         WLED {
                             cfg: cfg.clone(),
                             address: try_ip.clone(),
-                            port: info.get_port(),
                             name: info.get_fullname().to_string(),
                             wled: wled,
                         },

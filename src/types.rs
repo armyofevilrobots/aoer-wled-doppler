@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 pub struct WLED {
     pub cfg: Cfg,
     pub address: IpAddr,
-    pub port: u16,
     pub name: String,
     pub wled: Wled,
 }

@@ -8,7 +8,7 @@ pub fn playpause(baseurl: &str, state: bool) -> Result<(), ureq::Error> {
         // println!("We are paused? {}", &ispaused);
         if ispaused != &state {
             // println!("Swapping states!");
-            let result: serde_json::Value = ureq::put(url.as_str()).call()?.into_json()?;
+            let _result: serde_json::Value = ureq::put(url.as_str()).call()?.into_json()?;
         }
     };
     Ok(())
@@ -16,13 +16,8 @@ pub fn playpause(baseurl: &str, state: bool) -> Result<(), ureq::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        thread::{self, sleep},
-        time::Duration,
-    };
-
     use super::*;
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
+    use std::{thread::sleep, time::Duration};
 
     #[test]
     fn test_playpause() {

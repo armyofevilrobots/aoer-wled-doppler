@@ -50,12 +50,12 @@ fn main() {
     // let mut last_update = std::time::Instant::now();
 
     // OK, now we setup the monitoring...
-    let (stream, playing_arc) = if let Some(audio_config) = svc_config.audio_config {
+    let (_stream, playing_arc) = if let Some(audio_config) = svc_config.audio_config {
         let (mon, playing_arc) = monitor::setup_audio(&audio_config).unwrap();
         (Some(mon), playing_arc)
     } else {
         (None, Arc::new(AtomicBool::new(false)))
-    };
+    }; // Note: Stream has to stay in scope or it gets collected and audio dies.
 
     let mut quiet_cycles: usize = 0;
     loop {
@@ -73,10 +73,14 @@ fn main() {
             if quiet_cycles >= svc_config.ledfx_idle_cycles.unwrap_or(3) {
                 // Again, arbitrary
                 debug!("We have been quiet for a couple cycles.");
-                playpause(baseurl.as_str(), true);
+                playpause(baseurl.as_str(), true).unwrap_or_else(|_| {
+                    warn!("Failed to pause LEDFX!");
+                });
             } else {
                 debug!("We have NOT been quiet for a couple cycles. Showing LEDFX.");
-                playpause(baseurl.as_str(), false);
+                playpause(baseurl.as_str(), false).unwrap_or_else(|_| {
+                    warn!("Failed to pause LEDFX!");
+                })
             }
         } else {
             debug!("No LEDFX url found. Skipping updates.");
