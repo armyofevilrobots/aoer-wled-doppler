@@ -20,6 +20,7 @@ pub struct AudioConfig{
     pub input_device: String,
     #[serde(default = "default_jack")]
     pub jack: bool,
+    pub ledfx_threshold_db: Option<f32>
 }
 
 fn default_input_device()->String{
@@ -43,7 +44,7 @@ pub struct Config {
     pub logfile: Option<PathBuf>,
     pub audio_config: Option<AudioConfig>,
     pub ledfx_url: Option<String>,
-    pub ledfx_idle_cycles: Option<usize>
+    pub ledfx_idle_cycles: Option<usize>,
 }
 
 fn default_logfile()->Option<PathBuf>{

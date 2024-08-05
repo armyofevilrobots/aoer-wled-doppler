@@ -45,6 +45,7 @@ Below is a simple guide to the settings:
     audio_config: Some(AudioConfig(  // Optional audioconfig for monitoring.
             input_device: "default", //iec958:CARD=J380,DEV=0",
             jack: false,  // I've not tested jack integration. YMMV.
+            ledfx_threshold_db: Some(-32.),  // How many db minimum to keep vis on.
         )),
     ledfx_url: Some("http://localhost:8888"), // If set to None, ledfx won't be modified.
     ledfx_idle_cycles: Some(5), // How many 10 second cycles of silence before pausing ledfx 
