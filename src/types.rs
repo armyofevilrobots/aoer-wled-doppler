@@ -31,6 +31,10 @@ fn default_jack()->bool{
     false
 }
 
+fn default_cycle()->f64{
+    10.0
+}
+
 #[derive(Debug)]
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -45,6 +49,8 @@ pub struct Config {
     pub audio_config: Option<AudioConfig>,
     pub ledfx_url: Option<String>,
     pub ledfx_idle_cycles: Option<usize>,
+    #[serde(default = "default_cycle")]
+    pub cycle_seconds: f64,
 }
 
 fn default_logfile()->Option<PathBuf>{

@@ -48,7 +48,8 @@ Below is a simple guide to the settings:
             ledfx_threshold_db: Some(-32.),  // How many db minimum to keep vis on.
         )),
     ledfx_url: Some("http://localhost:8888"), // If set to None, ledfx won't be modified.
-    ledfx_idle_cycles: Some(5), // How many 10 second cycles of silence before pausing ledfx 
+    ledfx_idle_cycles: Some(5), // How many $CYCLE_SECONDS second cycles of silence before pausing ledfx 
+    cycle_seconds: 10.0, // How many seconds between updates. Default 10.0 seconds
 
 )
 

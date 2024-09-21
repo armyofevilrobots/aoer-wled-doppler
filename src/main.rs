@@ -65,7 +65,7 @@ fn main() {
             quiet_cycles = 0;
         } else {
             debug!("arc says we are quiet.");
-            quiet_cycles = (quiet_cycles + 1).max(&svc_config.ledfx_idle_cycles.unwrap_or(3) + 1);
+            quiet_cycles = (quiet_cycles + 1).min(&svc_config.ledfx_idle_cycles.unwrap_or(3) + 1);
         }
 
         if let Some(baseurl) = &svc_config.ledfx_url {
@@ -156,6 +156,7 @@ fn main() {
             );
         }
 
-        std::thread::sleep(Duration::from_secs(10));
+        //std::thread::sleep(Duration::from_secs(10));
+        std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
     }
 }
