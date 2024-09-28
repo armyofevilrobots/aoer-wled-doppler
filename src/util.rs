@@ -65,7 +65,7 @@ pub fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
 /// Set the brightness of the given wled device.
 pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
     wled.wled.state = Some(State {
-        on: Some(true),
+        on: if new_bri>0{ Some(true)} else {Some(false)},
         bri: Some(new_bri),
         transition: None,
         tt: None,

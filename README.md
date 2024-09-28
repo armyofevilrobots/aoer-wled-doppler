@@ -34,6 +34,8 @@ Below is a simple guide to the settings:
         // brightness is between 0 and 255, and matches the WLED web config range.
         // If none is supplied, the default will be the current WLED startup default
         // as the maximum, and the minimum will be the maximum divided by 4.0.
+        // If a zero (0) is specified as minimum brightness, then the LED will be turned
+        // off entirely at night.
     },
     transition_duration: 7200,  // How many seconds to fade to/from the min/max brightness
     loglevel: 3,  // 0: no logging, 1: error, 2: warn, 3: info, 4: debug, 5: TRACE
