@@ -11,7 +11,25 @@ use std::path::PathBuf;
 use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
-pub fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
+
+pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>){
+    let levels = vec![
+        log::LevelFilter::Off,
+        log::LevelFilter::Error,
+        log::LevelFilter::Warn,
+        log::LevelFilter::Info,
+        log::LevelFilter::Debug,
+        log::LevelFilter::Trace,
+    ];
+    configure_logging(
+        *levels
+            .get(level)
+            .unwrap_or(&log::LevelFilter::Info),
+        log_path,
+    );
+}
+
+fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
     // Configure logger at runtime
     let colors = ColoredLevelConfig::new().debug(Color::Magenta);
     let fernlog = fern::Dispatch::new()
@@ -120,21 +138,27 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
             info!("Found WLED at: {}", &url);
             let mut wled: Wled = Wled::try_from_url(&url).unwrap();
             // info!("new wled: {wled:?}");
-            if let Ok(()) = wled.get_cfg_from_wled() {
-                if let Some(cfg) = &wled.cfg {
-                    // info!("WLED CFG: {:?}", &wled.cfg);
-                    found_wled.insert(
-                        full_name.to_string(),
-                        WLED {
-                            cfg: cfg.clone(),
-                            address: try_ip.clone(),
-                            name: info.get_fullname().to_string(),
-                            wled: wled,
-                        },
-                    );
-                    return Ok(());
+            match wled.get_state_from_wled() {
+                Ok(())=>{
+                    if let Some(state) = &wled.state {
+                        // info!("WLED CFG: {:?}", &wled.cfg);
+                        found_wled.insert(
+                            full_name.to_string(),
+                            WLED {
+                                state: state.clone(),
+                                address: try_ip.clone(),
+                                name: info.get_fullname().to_string(),
+                                wled: wled,
+                            },
+                        );
+                        return Ok(());
+                    }
+                },
+                Err(the_error)=>{
+                    warn!("Failed to read config from WLED: {} -> {}", full_name, the_error);
                 }
             }
+
         }
         return Err(anyhow!("Could not register WLED: {}", info.get_fullname()));
     }

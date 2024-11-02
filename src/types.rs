@@ -1,12 +1,28 @@
 use std::{collections::HashMap, path::PathBuf};
 use std::net::IpAddr;
 use wled_json_api_library::wled::Wled;
-use wled_json_api_library::structures::cfg::Cfg;
+use wled_json_api_library::structures::state::State;
 use serde::{Serialize, Deserialize};
+use clap::Parser;
+
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+pub(crate) struct Args {
+    /// Name of the person to greet
+    #[arg(short, long)]
+    pub config_path: Option<PathBuf>,
+
+    // /// Number of times to greet
+    // #[arg(short, long, default_value_t = 1)]
+    // count: u8,
+}
+
 
 #[derive(Debug)]
 pub struct WLED {
-    pub cfg: Cfg,
+    pub state: State,
     pub address: IpAddr,
     pub name: String,
     pub wled: Wled,
@@ -22,6 +38,26 @@ pub struct AudioConfig{
     pub jack: bool,
     pub ledfx_threshold_db: Option<f32>
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ScheduleTime{
+    Sunrise,
+    SunriseOffset(i16),
+    Sunset,
+    SunsetOffset(i16),
+    Time(chrono::NaiveTime),
+}
+
+// These are used as a list of times with intensities 0-255.
+// We interpolate linearly, and treat each day as a loop, so
+// we interpolate between the last time in the previous day,
+// and the first time today.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DayNightPresets{
+    brightness: u8,
+    time: ScheduleTime,
+}
+
 
 fn default_input_device()->String{
     "default".to_string()

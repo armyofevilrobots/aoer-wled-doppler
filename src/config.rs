@@ -46,8 +46,15 @@ fn bootstrap() -> Result<PathBuf> {
     Ok(cfgpath)
 }
 
-pub fn load_config() -> Result<Config> {
-    let cfgdir = bootstrap()?;
+pub fn load_config(cfg_path: Option<PathBuf>) -> Result<Config> {
+    let cfgdir = match cfg_path{
+        Some(cfgpath)=> {
+            cfgpath
+        },
+        None=>{
+            bootstrap()?
+        }
+    };
     let cfgfile = std::fs::read_to_string(cfgdir)?;
     let cfg: Config = ron::de::from_bytes(cfgfile.as_bytes())?;
     Ok(cfg)

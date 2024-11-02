@@ -2,49 +2,43 @@ use log::trace;
 use log::{self, debug, info, warn};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
-use wled_json_api_library::structures::cfg::cfg_def::Def;
+use clap::Parser;
 mod config;
 mod ledfx;
 mod monitor;
 mod types;
 mod util;
-use config::*;
-use ledfx::playpause;
-use types::*;
-use util::*;
+use crate::config::*;
+use crate::ledfx::playpause;
+use crate::types::*;
+use crate::util::*;
 
 const SERVICE_NAME: &'static str = "_wled._tcp.local.";
 
 fn main() {
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
-    let svc_config = match load_config() {
+
+    let args = Args::parse();
+
+    let svc_config = match load_config(args.config_path) {
         Ok(config) => config,
-        Err(err) => panic!("Failed to load config: {:?}", err),
+        Err(err) => {
+            // panic!("Failed to load config: {:?}", err),   
+            eprintln!("Failed to load config: {:?}", err);
+            std::process::exit(-1);
+        }
     };
 
-    let levels = vec![
-        log::LevelFilter::Off,
-        log::LevelFilter::Error,
-        log::LevelFilter::Warn,
-        log::LevelFilter::Info,
-        log::LevelFilter::Debug,
-        log::LevelFilter::Trace,
-    ];
-    configure_logging(
-        *levels
-            .get(svc_config.loglevel)
-            .unwrap_or(&log::LevelFilter::Info),
-        svc_config.logfile.clone(),
-    );
     info!("==========================================================");
     info!("= aoer-wled-doppler starting. Scanning for WLED devices...");
     info!("==========================================================");
     info!("Loaded config: {:?}", &svc_config);
 
+    util::cfg_logging(svc_config.loglevel,svc_config.logfile.clone());
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
@@ -108,15 +102,14 @@ fn main() {
         debug!("Dim out is: {}%", (dim_pc * 100.) as usize);
         let mut leds_ok: usize = 0;
         for (name, wled) in found_wled.iter_mut() {
+            info!("Dimming {}", name);
             let new_bri = if let Some((low, high)) = svc_config.brightnesses.get(name) {
                 let gap = (high - low) as f32;
                 (*high as f32 - (dim_pc * gap)).min(255.).max(0.) as u8
             } else if !svc_config.exclusions.contains(&name) {
                 let default_bri = &wled
-                    .cfg
+                    .state
                     .clone()
-                    .def
-                    .unwrap_or(Def::default())
                     .bri
                     .unwrap_or(128);
                 let (high, low) = (*default_bri as f32, *default_bri as f32 / 4.);
