@@ -1,7 +1,7 @@
 aoer-wled-doppler
 =================
 
-Now at 0.2.0!
+Now at 0.2!
 -------------
 
 ![Build Status](https://github.com/armyofevilrobots/aoer-wled-doppler/actions/workflows/rust.yml/badge.svg)
