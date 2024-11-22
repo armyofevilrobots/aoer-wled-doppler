@@ -443,7 +443,7 @@ mod test {
         ]);
 
         let dim_pc = calc_led_state_scheduled(today, 49., -124., &simple_dimming_schedule);
-        println!("DIM PC actual: {}", dim_pc);
+        println!("DIM PC actual: {:?}", dim_pc);
 
         let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(19, 30, 0)).unwrap(),
@@ -452,14 +452,14 @@ mod test {
             &simple_dimming_schedule,
         );
 
-        println!("DIM PC at 7:30PM: {}", dim_pc);
+        println!("DIM PC at 7:30PM: {:?}", dim_pc);
         let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(7, 30, 0)).unwrap(),
             49.,
             -124.,
             &simple_dimming_schedule,
         );
-        println!("DIM PC at 7:30AM: {}", dim_pc);
+        println!("DIM PC at 7:30AM: {:?}", dim_pc);
 
         let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
@@ -467,7 +467,7 @@ mod test {
             -124.,
             &simple_dimming_schedule,
         );
-        println!("DIM PC at midnight: {}", dim_pc);
+        println!("DIM PC at midnight: {:?}", dim_pc);
     }
 
     #[test]

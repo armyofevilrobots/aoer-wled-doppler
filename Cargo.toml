@@ -1,6 +1,6 @@
 [package]
 name = "aoer-wled-doppler"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 default-run="aoer-wled-doppler"
 
