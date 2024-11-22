@@ -1,15 +1,20 @@
-use log::trace;
+use clap::Parser;
+use gtk;
+use inotify::{EventMask, Inotify, WatchMask};
 use log::{self, debug, info, warn};
+use log::{error, trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use std::collections::HashMap;
-use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
-use clap::Parser;
+use std::{path::PathBuf, sync::atomic::AtomicBool};
+use tray_icon::TrayIconBuilder;
+use tray_icon::TrayIconEvent;
 mod config;
 mod ledfx;
 mod monitor;
+mod systray;
 mod types;
 mod util;
 use crate::config::*;
@@ -18,16 +23,30 @@ use crate::types::*;
 use crate::util::*;
 
 const SERVICE_NAME: &'static str = "_wled._tcp.local.";
+const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
 
-fn main() {
+fn main() -> ! {
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
 
     let args = Args::parse();
 
+    let mut inotify = Inotify::init().expect("Failed to initialize inotify");
+    let cfgfile = match args.config_path.clone() {
+        Some(cfgpath) => cfgpath,
+        None => crate::config::calc_actual_config_file(None),
+    };
+    inotify
+        .watches()
+        .add(
+            cfgfile,
+            WatchMask::MODIFY | WatchMask::CREATE | WatchMask::DELETE,
+        )
+        .expect("Failed to add inotify watch");
+
     let svc_config = match load_config(args.config_path) {
         Ok(config) => config,
         Err(err) => {
-            // panic!("Failed to load config: {:?}", err),   
+            // panic!("Failed to load config: {:?}", err),
             eprintln!("Failed to load config: {:?}", err);
             std::process::exit(-1);
         }
@@ -38,7 +57,7 @@ fn main() {
     info!("==========================================================");
     info!("Loaded config: {:?}", &svc_config);
 
-    util::cfg_logging(svc_config.loglevel,svc_config.logfile.clone());
+    util::cfg_logging(svc_config.loglevel, svc_config.logfile.clone());
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
@@ -52,104 +71,152 @@ fn main() {
     }; // Note: Stream has to stay in scope or it gets collected and audio dies.
 
     let mut quiet_cycles: usize = 0;
+    let mut inotify_buffer = [0u8; 4096];
     loop {
-        let now = std::time::Instant::now();
-        if playing_arc.load(Relaxed) {
-            debug!("arc says we are playing.");
-            quiet_cycles = 0;
-        } else {
-            debug!("arc says we are quiet.");
-            quiet_cycles = (quiet_cycles + 1).min(&svc_config.ledfx_idle_cycles.unwrap_or(3) + 1);
-        }
-
-        if let Some(baseurl) = &svc_config.ledfx_url {
-            debug!("Got LEDFX url of {}", baseurl);
-            if quiet_cycles >= svc_config.ledfx_idle_cycles.unwrap_or(3) {
-                // Again, arbitrary
-                debug!("We have been quiet for a couple cycles.");
-                playpause(baseurl.as_str(), true).unwrap_or_else(|_| {
-                    warn!("Failed to pause LEDFX!");
-                });
-            } else {
-                debug!("We have NOT been quiet for a couple cycles. Showing LEDFX.");
-                playpause(baseurl.as_str(), false).unwrap_or_else(|_| {
-                    warn!("Failed to pause LEDFX!");
-                })
+        loop {
+            info!("Checking inotify events...");
+            if let Ok(events) = inotify.read_events(&mut inotify_buffer) {
+                let mut should_break: bool = false;
+                for event in events {
+                    info!("INOTIFY_EV: {:?}", event);
+                    should_break = true;
+                }
+                if should_break {
+                    break;
+                }
             }
-        } else {
-            debug!("No LEDFX url found. Skipping updates.");
-        }
-        while !receiver.is_empty() {
-            if let Ok(event) = receiver.recv() {
-                match event {
-                    ServiceEvent::ServiceResolved(info) => {
-                        let _ = update_wled_cache(&info, &mut found_wled); // TODO: Fix this<--
-                    }
-                    other_event => {
-                        trace!("At {:?} : {:?}", now.elapsed(), &other_event);
+            // .read_events_blocking(&mut inotify_buffer)
+            let now = std::time::Instant::now();
+            if playing_arc.load(Relaxed) {
+                debug!("arc says we are playing.");
+                quiet_cycles = 0;
+            } else {
+                debug!("arc says we are quiet.");
+                quiet_cycles =
+                    (quiet_cycles + 1).min(&svc_config.ledfx_idle_cycles.unwrap_or(3) + 1);
+            }
+
+            if let Some(baseurl) = &svc_config.ledfx_url {
+                debug!("Got LEDFX url of {}", baseurl);
+                if quiet_cycles >= svc_config.ledfx_idle_cycles.unwrap_or(3) {
+                    // Again, arbitrary
+                    debug!("We have been quiet for a couple cycles.");
+                    playpause(baseurl.as_str(), true).unwrap_or_else(|_| {
+                        warn!("Failed to pause LEDFX!");
+                    });
+                } else {
+                    debug!("We have NOT been quiet for a couple cycles. Showing LEDFX.");
+                    playpause(baseurl.as_str(), false).unwrap_or_else(|_| {
+                        warn!("Failed to pause LEDFX!");
+                    })
+                }
+            } else {
+                debug!("No LEDFX url found. Skipping updates.");
+            }
+            while !receiver.is_empty() {
+                if let Ok(event) = receiver.recv() {
+                    match event {
+                        ServiceEvent::ServiceResolved(info) => {
+                            let _ = update_wled_cache(&info, &mut found_wled); // TODO: Fix this<--
+                        }
+                        other_event => {
+                            trace!("At {:?} : {:?}", now.elapsed(), &other_event);
+                        }
                     }
                 }
             }
-        }
 
-        let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
-        let dim_pc: f32 = calc_dim_pc(
-            today,
-            svc_config.lat as f64,
-            svc_config.lon as f64,
-            svc_config.transition_duration,
-        );
-        debug!("Dim out is: {}%", (dim_pc * 100.) as usize);
-        let mut leds_ok: usize = 0;
-        for (name, wled) in found_wled.iter_mut() {
-            info!("Dimming {}", name);
-            let new_bri = if let Some((low, high)) = svc_config.brightnesses.get(name) {
-                let gap = (high - low) as f32;
-                (*high as f32 - (dim_pc * gap)).min(255.).max(0.) as u8
-            } else if !svc_config.exclusions.contains(&name) {
-                let default_bri = &wled
-                    .state
-                    .clone()
-                    .bri
-                    .unwrap_or(128);
-                let (high, low) = (*default_bri as f32, *default_bri as f32 / 4.);
+            let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
+            let mut leds_ok: usize = 0;
+            let mut leds_noconfig: usize = 0;
+            let mut leds_ignore: usize = 0;
+            let mut leds_err: usize = 0;
+            info!("Found devices: {:?}", found_wled.keys().map(|key|key.clone()).collect::<Vec<String>>());
+
+            for (name, wled) in found_wled.iter_mut() {
+                debug!("Processing {}", name);
+                if let Some(led_bri_config) = svc_config.leds.get(name) {
+                    debug!("Found BRI config for LED: {}", name);
+                    if !matches!(led_bri_config.schedule, LEDScheduleSpec::None) {
+                        let schedule_name = match led_bri_config.schedule.clone() {
+                            LEDScheduleSpec::Default => "default".to_string(),
+                            LEDScheduleSpec::ByName(foo) => foo.clone(),
+                            _ => panic!("How TF did we get past the guard?!"),
+                        };
+                        debug!("Found valid schedule spec for LED: {}", name);
+                        // Determine which schedule to use for this LED
+                        if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
+                            // Yay, a match. figure out the dimming.
+                            debug!("Found a working schedule for spec: {:?}", &led_schedule);
+                            let dim_pc: f32 = calc_dim_pc_scheduled(
+                                today,
+                                svc_config.lat as f64,
+                                svc_config.lon as f64,
+                                &led_schedule,
+                            );
+                            debug!("Dim_PC is {}", dim_pc);
+
+                            let gap =
+                                ((led_bri_config.max_bri - led_bri_config.min_bri) as f32).abs();
+                            let out = ((gap * dim_pc) + led_bri_config.min_bri as f32)
+                                .max(0.)
+                                .min(255.) as u8;
+                            info!(
+                                "Setting LED:{} to BRI{} (min:{},max:{},dim:{})",
+                                name, out, led_bri_config.min_bri, led_bri_config.max_bri, dim_pc
+                            );
+                            let result = led_set_brightness(wled, out);
+                            if result.is_err() {
+                                error!(
+                                    "Failed to update LED:{} with err:{:?}",
+                                    name,
+                                    result.err().unwrap()
+                                );
+                                leds_err += 1;
+                            } else {
+                                leds_ok += 1;
+                            }
+                        } else {
+                            panic!(
+                                "Could not find brightness schedule {} in config for LED {}",
+                                &schedule_name, &name
+                            );
+                        }; // Got the schedule
+                    } else {
+                        warn!("LED: {} configured for no management.", name);
+                    }; // if matches(led_config_None)
+
+                // leds_ok += 1;
+                } else {
+                    leds_noconfig += 1;
+                } // if let some(bri_wled_config)
+            } // for (name,wled) in found wleds.
+            if leds_ok == found_wled.len() {
                 info!(
-                    "WLED {} being dimmed to default {}-{} range",
-                    &name,
-                    low.max(255.) as u8,
-                    high.min(0.) as u8
+                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
+                    leds_ok,
+                    leds_ignore,
+                    leds_noconfig,
+                    leds_err,
+                    found_wled.len()
                 );
-                let gap = (high - low) as f32;
-                (high as f32 - (dim_pc * gap)).min(255.).max(0.) as u8
             } else {
-                info!("WLED {} is excluded. Not dimming.", &name);
-                leds_ok += 1;
-                0 // Required else has no dimming. Or else ;)
-            };
-
-            if !svc_config.exclusions.contains(&name) {
-                debug!("Dimming LED {} to {}", &name, new_bri);
-                let result = led_set_brightness(wled, new_bri);
-                if result.is_ok() {
-                    leds_ok += 1;
-                }
+                warn!(
+                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
+                    leds_ok,
+                    leds_ignore,
+                    leds_noconfig,
+                    leds_err,
+                    found_wled.len()
+                );
             }
-        }
-        if leds_ok == found_wled.len() {
-            info!(
-                "{} out of {} WLEDs processed OK.",
-                leds_ok,
-                found_wled.len()
-            );
-        } else {
-            warn!(
-                "{} out of {} WLEDs processed OK.",
-                leds_ok,
-                found_wled.len()
-            );
-        }
 
-        //std::thread::sleep(Duration::from_secs(10));
-        std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
-    }
+            //std::thread::sleep(Duration::from_secs(10));
+            std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
+        } // Loop wleds
+        if svc_config.restart_on_cfg_change {
+            info!("We would reload config here...");
+            std::process::exit(0);
+        }
+    } // Loop inotify
 }

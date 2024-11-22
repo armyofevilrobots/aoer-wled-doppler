@@ -1,18 +1,17 @@
 use crate::types::*;
 use anyhow::{anyhow, Result};
-use chrono::Datelike;
-use fern::colors::{Color, ColoredLevelConfig};
+use chrono::{Datelike, Local};
+use fern::colors::{self, Color, ColoredLevelConfig};
 use fern::log_file;
 use log::{self, debug, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
-
-pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>){
+pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>) {
     let levels = vec![
         log::LevelFilter::Off,
         log::LevelFilter::Error,
@@ -22,9 +21,7 @@ pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>){
         log::LevelFilter::Trace,
     ];
     configure_logging(
-        *levels
-            .get(level)
-            .unwrap_or(&log::LevelFilter::Info),
+        *levels.get(level).unwrap_or(&log::LevelFilter::Info),
         log_path,
     );
 }
@@ -83,7 +80,7 @@ fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
 /// Set the brightness of the given wled device.
 pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
     wled.wled.state = Some(State {
-        on: if new_bri>0{ Some(true)} else {Some(false)},
+        on: if new_bri > 0 { Some(true) } else { Some(false) },
         bri: Some(new_bri),
         transition: None,
         tt: None,
@@ -126,7 +123,9 @@ pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
 pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WLED>) -> Result<()> {
     let full_name = info.get_fullname().to_string();
     let old_wled = found_wled.get(&full_name);
-    if old_wled.is_none() || (!info.get_addresses().contains(&old_wled.unwrap().address)) {
+    if old_wled.is_none()
+        || (old_wled.is_some() && !info.get_addresses().contains(&old_wled.unwrap().address))
+    {
         if old_wled.is_some() {
             warn!("WLED '{}' may have changed IPs. Updating.", full_name);
         }
@@ -139,7 +138,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
             let mut wled: Wled = Wled::try_from_url(&url).unwrap();
             // info!("new wled: {wled:?}");
             match wled.get_state_from_wled() {
-                Ok(())=>{
+                Ok(()) => {
                     if let Some(state) = &wled.state {
                         // info!("WLED CFG: {:?}", &wled.cfg);
                         found_wled.insert(
@@ -153,12 +152,14 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
                         );
                         return Ok(());
                     }
-                },
-                Err(the_error)=>{
-                    warn!("Failed to read config from WLED: {} -> {}", full_name, the_error);
+                }
+                Err(the_error) => {
+                    warn!(
+                        "Failed to read config from WLED: {} -> {}",
+                        full_name, the_error
+                    );
                 }
             }
-
         }
         return Err(anyhow!("Could not register WLED: {}", info.get_fullname()));
     }
@@ -183,8 +184,8 @@ pub fn calc_dim_pc(
         today_date.month(),
         today_date.day(),
     );
-    debug!("Sunrise, Sunset: {:?}, {:?}", sunrise_time, sunset_time);
-    debug!(
+    info!("Sunrise, Sunset: {:?}, {:?}", sunrise_time, sunset_time);
+    info!(
         "Current unix time: {} and sunset is in {} seconds",
         today.timestamp(),
         sunset_time - today.timestamp()
@@ -218,10 +219,170 @@ pub fn calc_dim_pc(
     }
 }
 
+pub fn calc_dim_pc_scheduled(
+    now: chrono::DateTime<chrono::Local>,
+    lat: f64,
+    lon: f64,
+    schedule: &Vec<WLEDScheduleItem>,
+) -> f32 {
+    // Generate initial event lists.
+    let mut bri_ev: Vec<(u64, f32)> = schedule
+        .clone()
+        .iter()
+        .filter(|i| matches!(i.change, WLEDChange::Brightness(_)))
+        .map(|i| {
+            (
+                i.time.to_timestamp(lat, lon),
+                if let WLEDChange::Brightness(bri) = i.change {
+                    bri
+                } else {
+                    0.
+                },
+            )
+        })
+        .collect();
+    let mut pre_ev: Vec<(u64, u16)> = schedule
+        .clone()
+        .iter()
+        .filter(|i| matches!(i.change, WLEDChange::Preset(_)))
+        .map(|i| {
+            (
+                i.time.to_timestamp(lat, lon),
+                if let WLEDChange::Preset(pre) = i.change {
+                    pre
+                } else {
+                    1
+                },
+            )
+        })
+        .collect();
+
+    // Add offsets to beginning and end...
+    if let Some(last) = bri_ev.last() {
+        bri_ev.insert(0, (last.0 - (24 * 3600), last.1));
+    }
+    if let Some(first) = bri_ev.first() {
+        bri_ev.push((first.0 + (24 * 3600), first.1));
+    }
+    if let Some(last) = pre_ev.last() {
+        pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
+    }
+    if let Some(first) = pre_ev.first() {
+        pre_ev.push((first.0 + (24 * 3600), first.1));
+    }
+
+    // Then we determine current time and where that sits.
+    let now: i64 = now.timestamp();
+
+    if bri_ev.len() < 2 {
+        return 0.; // This is fucked. Should always have a couple entries.
+    }
+
+    let mut out: f32 = 0.;
+
+    debug!("Calculating dimming for schedule: {:?}", bri_ev);
+    debug!("My current time is {:?}", now);
+    for i in 0..(bri_ev.len() - 1) {
+        let before = bri_ev
+            .get(i)
+            .expect("Failed to index into a known position.");
+        let after = bri_ev
+            .get(i + 1)
+            .expect("Failed to index into a known position.");
+        if now >= before.0 as i64 && now <= after.0 as i64 {
+            debug!("Matched time!");
+            let delta_pc = (now as f32 - before.0 as f32) / (after.0 as f32 - before.0 as f32);
+            debug!("Delta PC is {}", delta_pc);
+            let delta_amt = (after.1 - before.1);
+            debug!("Delta AMT is {}", delta_amt);
+            out = before.1 + delta_pc * delta_amt;
+
+            debug!("Calced out to {}", out);
+            break;
+        }
+    }
+
+    out
+}
+
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
+    use crate::types::{ScheduleTime, WLEDChange, WLEDSchedule};
+    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    use fern::colors::{self, Color, ColoredLevelConfig};
+
+    #[test]
+    fn test_calc_dimming_schedule() {
+        let dispatch = fern::Dispatch::new();
+        let colors = ColoredLevelConfig::new().debug(Color::Magenta);
+        let fernlog = dispatch
+            .level(log::LevelFilter::Trace)
+            .level_for("mdns_sd", log::LevelFilter::Warn)
+            .level_for("reqwest", log::LevelFilter::Warn)
+            .chain(
+                fern::Dispatch::new()
+                    // Perform allocation-free log formatting
+                    .format(move |out, message, record| {
+                        out.finish(format_args!(
+                            "[{} {} {}] {}",
+                            humantime::format_rfc3339_seconds(std::time::SystemTime::now()),
+                            colors.color(record.level()),
+                            record.target(),
+                            message
+                        ))
+                    })
+                    .chain(std::io::stdout())
+                    .chain(std::io::stderr()),
+            );
+        info!("Test output via logging...");
+        let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
+        let simple_dimming_schedule = WLEDSchedule::from([
+            WLEDScheduleItem {
+                time: ScheduleTime::Time(NaiveTime::from_hms(7, 0, 0)),
+                change: WLEDChange::Brightness(0.2),
+            },
+            WLEDScheduleItem {
+                time: ScheduleTime::Time(NaiveTime::from_hms(8, 0, 0)),
+                change: WLEDChange::Brightness(0.8),
+            },
+            WLEDScheduleItem {
+                time: ScheduleTime::Time(NaiveTime::from_hms(19, 0, 0)),
+                change: WLEDChange::Brightness(0.8),
+            },
+            WLEDScheduleItem {
+                time: ScheduleTime::Time(NaiveTime::from_hms(20, 0, 0)),
+                change: WLEDChange::Brightness(0.2),
+            },
+        ]);
+
+        let dim_pc = calc_dim_pc_scheduled(today, 49., -124., &simple_dimming_schedule);
+        println!("DIM PC actual: {}", dim_pc);
+
+        let dim_pc = calc_dim_pc_scheduled(
+            today.with_time(NaiveTime::from_hms(19, 30, 0)).unwrap(),
+            49.,
+            -124.,
+            &simple_dimming_schedule,
+        );
+
+        println!("DIM PC at 7:30PM: {}", dim_pc);
+        let dim_pc = calc_dim_pc_scheduled(
+            today.with_time(NaiveTime::from_hms(7, 30, 0)).unwrap(),
+            49.,
+            -124.,
+            &simple_dimming_schedule,
+        );
+        println!("DIM PC at 7:30AM: {}", dim_pc);
+
+        let dim_pc = calc_dim_pc_scheduled(
+            today.with_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
+            49.,
+            -124.,
+            &simple_dimming_schedule,
+        );
+        println!("DIM PC at midnight: {}", dim_pc);
+    }
 
     #[test]
     fn test_calc_dimming() {
