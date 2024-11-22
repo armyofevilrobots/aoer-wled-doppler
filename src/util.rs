@@ -12,12 +12,14 @@ use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
 pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>) {
-    let levels = [log::LevelFilter::Off,
+    let levels = [
+        log::LevelFilter::Off,
         log::LevelFilter::Error,
         log::LevelFilter::Warn,
         log::LevelFilter::Info,
         log::LevelFilter::Debug,
-        log::LevelFilter::Trace];
+        log::LevelFilter::Trace,
+    ];
     configure_logging(
         *levels.get(level).unwrap_or(&log::LevelFilter::Info),
         log_path,
@@ -76,6 +78,49 @@ fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
 }
 
 /// Set the brightness of the given wled device.
+pub fn led_set_preset(wled: &mut WLED, new_preset: u16) -> Result<()> {
+    wled.wled.state = Some(State {
+        on: None,
+        bri: None,
+        transition: None,
+        tt: None,
+        ps: Some(new_preset as i32),
+        psave: None,
+        pl: None,
+        nl: None,
+        udpn: None,
+        v: None,
+        rb: None,
+        live: None,
+        lor: None,
+        time: None,
+        mainseg: None,
+        playlist: None,
+        seg: None,
+    });
+    match wled.wled.flush_state() {
+        Ok(response) => {
+            trace!(
+                "    - HTTP response: {:?}",
+                response.text().unwrap_or("UNKNOWN ERROR".to_string())
+            );
+            Ok(())
+        }
+        Err(err) => {
+            error!(
+                "    - Failed to update WLED: '{}' with error: {:?}",
+                &wled.name, err
+            );
+            Err(anyhow!(
+                "Failed to update wled {} with error {:?}",
+                &wled.name,
+                err
+            ))
+        }
+    }
+}
+
+/// Set the brightness of the given wled device.
 pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
     wled.wled.state = Some(State {
         on: if new_bri > 0 { Some(true) } else { Some(false) },
@@ -131,7 +176,9 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
         for try_ip in info.get_addresses() {
             let url: Url =
                 Url::try_from(format!("http://{}:{}/", try_ip, info.get_port()).as_str())
-                    .unwrap_or_else(|_| panic!("Invalid addr/port: {}:{}", try_ip, info.get_port()));
+                    .unwrap_or_else(|_| {
+                        panic!("Invalid addr/port: {}:{}", try_ip, info.get_port())
+                    });
             info!("Found WLED at: {}", &url);
             let mut wled: Wled = Wled::try_from_url(&url).unwrap();
             // info!("new wled: {wled:?}");
@@ -219,12 +266,12 @@ pub fn calc_dim_pc(
 }
 
 #[allow(unused)]
-pub(crate) fn calc_dim_pc_scheduled(
+pub(crate) fn calc_led_state_scheduled(
     now: chrono::DateTime<chrono::Local>,
     lat: f64,
     lon: f64,
     schedule: &Vec<WLEDScheduleItem>,
-) -> f32 {
+) -> (f32, Option<u16>) {
     // Generate initial event lists.
     let mut bri_ev: Vec<(u64, f32)> = schedule
         .clone()
@@ -251,7 +298,8 @@ pub(crate) fn calc_dim_pc_scheduled(
                 if let WLEDChange::Preset(pre) = i.change {
                     pre
                 } else {
-                    1
+                    panic!("WTF?! Unreachable preset.");
+                    1 // Note, this is hopefully unreachable.
                 },
             )
         })
@@ -271,11 +319,30 @@ pub(crate) fn calc_dim_pc_scheduled(
         pre_ev.push((first.0 + (24 * 3600), first.1));
     }
 
+    // Same for presets
+    if pre_ev.len() > 1 {
+        // Add offsets to beginning and end...
+        if let Some(last) = pre_ev.last() {
+            pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
+        }
+        if let Some(first) = pre_ev.first() {
+            pre_ev.push((first.0 + (24 * 3600), first.1));
+        }
+        if let Some(last) = pre_ev.last() {
+            pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
+        }
+        if let Some(first) = pre_ev.first() {
+            pre_ev.push((first.0 + (24 * 3600), first.1));
+        }
+    }
+
     // Then we determine current time and where that sits.
     let now: i64 = now.timestamp();
 
-    if bri_ev.len() < 2 {
-        return 0.; // This is fucked. Should always have a couple entries.
+    if bri_ev.len() < 2 || pre_ev.len() == 1 {
+        // Note that an event length of "1" is the only invalid
+        // preset config. No changes is fine, and more than 1 is always valid.
+        return (0., None); // This is fucked. Should always have a couple entries.
     }
 
     let mut out: f32 = 0.;
@@ -302,7 +369,26 @@ pub(crate) fn calc_dim_pc_scheduled(
         }
     }
 
-    out
+    debug!("Pre ev length is {}", pre_ev.len());
+    let mut preset_out: Option<u16> = None;
+    if pre_ev.len() > 2 {
+        for i in 0..(pre_ev.len() - 1) {
+            let before = pre_ev
+                .get(i)
+                .expect("Failed to index into a known position.");
+            let after = pre_ev
+                .get(i + 1)
+                .expect("Failed to index into a known position.");
+            if now >= before.0 as i64 && now <= after.0 as i64 {
+                debug!("Matched preset time!");
+                preset_out = Some(before.1);
+                debug!("Calced out to {}", out);
+                break;
+            }
+        }
+    }
+
+    (out, preset_out)
 }
 
 #[cfg(test)]
@@ -356,10 +442,10 @@ mod test {
             },
         ]);
 
-        let dim_pc = calc_dim_pc_scheduled(today, 49., -124., &simple_dimming_schedule);
+        let dim_pc = calc_led_state_scheduled(today, 49., -124., &simple_dimming_schedule);
         println!("DIM PC actual: {}", dim_pc);
 
-        let dim_pc = calc_dim_pc_scheduled(
+        let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(19, 30, 0)).unwrap(),
             49.,
             -124.,
@@ -367,7 +453,7 @@ mod test {
         );
 
         println!("DIM PC at 7:30PM: {}", dim_pc);
-        let dim_pc = calc_dim_pc_scheduled(
+        let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(7, 30, 0)).unwrap(),
             49.,
             -124.,
@@ -375,7 +461,7 @@ mod test {
         );
         println!("DIM PC at 7:30AM: {}", dim_pc);
 
-        let dim_pc = calc_dim_pc_scheduled(
+        let dim_pc = calc_led_state_scheduled(
             today.with_time(NaiveTime::from_hms(0, 0, 0)).unwrap(),
             49.,
             -124.,

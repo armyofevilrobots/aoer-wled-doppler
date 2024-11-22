@@ -1,5 +1,9 @@
 aoer-wled-doppler
 =================
+
+Now at 0.2.0!
+-------------
+
 ![Build Status](https://github.com/armyofevilrobots/aoer-wled-doppler/actions/workflows/rust.yml/badge.svg)
 
 ![](web/doppler-wall-animated.webp)
@@ -25,19 +29,30 @@ Below is a simple guide to the settings:
 (
     lat: 49.0,   // lat and
     lon: -124.0, // lon values for calculating sunset/sunrise.
-    exclusions: [/*"wled-vu-strip._wled._tcp.local."*/], // Don't touch these devices.
-    brightnesses: { 
-        "wled-vu-strip._wled._tcp.local.": (1, 5), 
-        "wled-derek-matrix-1._wled._tcp.local.": (1, 4),
-        "wled-derek-desk._wled._tcp.local.": (1, 30),
-        // device_name is the key, the (x,y) tuple are min/max brightness values
-        // brightness is between 0 and 255, and matches the WLED web config range.
-        // If none is supplied, the default will be the current WLED startup default
-        // as the maximum, and the minimum will be the maximum divided by 4.0.
-        // If a zero (0) is specified as minimum brightness, then the LED will be turned
-        // off entirely at night.
+    leds: { 
+        // This is a totally new structure. It maps to the schedule to use
+        // and then the min/max brightnesses for that WLED.
+        "wled-derek-matrix-1._wled._tcp.local.":(
+                schedule: ByName("matrix"),
+                min_bri: 1,
+                max_bri: 5,
+            ),
+        "wled-barback._wled._tcp.local.":(
+                schedule: ByName("barback_schedule"),
+                min_bri: 2,
+                max_bri: 200,
+            ),
+        "wled-vu-strip._wled._tcp.local.":(
+                schedule: Default,
+                min_bri: 1,
+                max_bri: 5,
+            ),
+        "wled-redshift-strip._wled._tcp.local.":(
+                schedule: ByName("daylight"),
+                min_bri: 30,
+                max_bri: 150,
+            ),
     },
-    transition_duration: 7200,  // How many seconds to fade to/from the min/max brightness
     loglevel: 3,  // 0: no logging, 1: error, 2: warn, 3: info, 4: debug, 5: TRACE
     logfile: Some("/home/yourname/.wled-doppler/wled-doppler.log"),  // Where to log
     spotify_config: Some(SpotifyConfig(  // Currently not used.
@@ -52,7 +67,89 @@ Below is a simple guide to the settings:
     ledfx_url: Some("http://localhost:8888"), // If set to None, ledfx won't be modified.
     ledfx_idle_cycles: Some(5), // How many $CYCLE_SECONDS second cycles of silence before pausing ledfx 
     cycle_seconds: 10.0, // How many seconds between updates. Default 10.0 seconds
-
+    schedule: {
+        "matrix": [
+            (
+                time: Time("07:00:00"),
+                change: Brightness(0.0),
+            ),
+            (
+                time: Time("07:00:00"),
+                change: Preset(2),  // Change to preset 2 at 7AM
+            ),
+            (
+                time: Time("08:00:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("15:30:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("19:00:00"),
+                change: Brightness(0.0),
+            ),
+            (
+                time: Time("21:00:00"),
+                change: Preset(1),  // Back to preset 1 at 9PM
+            ),
+        ],
+        "daylight": [
+            (
+                time: Sunrise,  // Automatically calculated by lat/lon
+                change: Brightness(0.0),
+            ),
+            (
+                time: SunriseOffset(3600),  // Take an hour to smoothly transition
+                change: Brightness(1.0),
+            ),
+            (
+                time: Sunset,
+                change: Brightness(1.0),
+            ),
+            (
+                time: SunsetOffset(3600),  // Note that negative numbers are OK too.
+                change: Brightness(0.0),
+            ),
+        ],
+        "default": [
+            (
+                time: Time("07:00:00"),
+                change: Brightness(0.0),
+            ),
+            (
+                time: Time("08:00:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("15:30:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("19:00:00"),
+                change: Brightness(0.0),
+            ),
+        ],
+        "barback_schedule": [
+            (
+                time: Time("05:30:00"),
+                change: Brightness(0.0),
+            ),
+            (
+                time: Time("06:00:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("20:00:00"),
+                change: Brightness(1.0),
+            ),
+            (
+                time: Time("21:00:00"),
+                change: Brightness(0.0),
+            ),
+        ],
+    },
+    restart_on_cfg_change: false // true -> Great if you're using systemd
 )
 
 ```

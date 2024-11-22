@@ -3,11 +3,14 @@ use inotify::{Inotify, WatchMask};
 use log::{self, debug, info, warn};
 use log::{error, trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
+use util::led_set_preset;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
-use std::sync::atomic::AtomicBool;
+use wled_json_api_library::structures::state::State;
+use wled_json_api_library::wled::Wled;
 mod config;
 mod ledfx;
 mod monitor;
@@ -17,7 +20,7 @@ mod util;
 use crate::config::{calc_actual_config_file, load_config};
 use crate::ledfx::playpause;
 use crate::types::*;
-use crate::util::{calc_dim_pc_scheduled, led_set_brightness, update_wled_cache};
+use crate::util::{calc_led_state_scheduled, led_set_brightness, update_wled_cache};
 
 const SERVICE_NAME: &str = "_wled._tcp.local.";
 // const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
@@ -128,7 +131,10 @@ fn main() -> ! {
             let mut leds_noconfig: usize = 0;
             let leds_ignore: usize = 0;
             let mut leds_err: usize = 0;
-            info!("Found devices: {:?}", found_wled.keys().cloned().collect::<Vec<String>>());
+            info!(
+                "Found devices: {:?}",
+                found_wled.keys().cloned().collect::<Vec<String>>()
+            );
 
             for (name, wled) in found_wled.iter_mut() {
                 debug!("Processing {}", name);
@@ -145,12 +151,35 @@ fn main() -> ! {
                         if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
                             // Yay, a match. figure out the dimming.
                             debug!("Found a working schedule for spec: {:?}", &led_schedule);
-                            let dim_pc: f32 = calc_dim_pc_scheduled(
+                            let (dim_pc, preset_id) = calc_led_state_scheduled(
                                 today,
                                 svc_config.lat as f64,
                                 svc_config.lon as f64,
                                 led_schedule,
                             );
+
+                            if let Some(id) = preset_id {
+                                debug!("Setting LED {} to preset {}", name, id);
+                                if let Ok(_) = wled.wled.get_state_from_wled() {
+                                    if let Some(state) = &wled.wled.state {
+                                        if state.ps != Some(id as i32) {
+                                            match led_set_preset(wled, id) {
+                                                Ok(_) => (),
+                                                Err(err) => error!(
+                                                    "Failed to set {} preset to {} : {:?}",
+                                                    name, id, err
+                                                ),
+                                            }
+                                        } else {
+                                            debug!(
+                                                "Found matching state already for {}:{}",
+                                                name, id
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
                             debug!("Dim_PC is {}", dim_pc);
 
                             let gap =
