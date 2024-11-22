@@ -63,10 +63,7 @@ pub fn setup_audio(audio_config: &AudioConfig) -> anyhow::Result<(Stream, Arc<At
     }
     .expect("failed to find input device");
 
-    let threshold_db = match audio_config.ledfx_threshold_db {
-        Some(threshold_db) => threshold_db,
-        None => -30.,
-    };
+    let threshold_db = audio_config.ledfx_threshold_db.unwrap_or(-30.);
 
     info!("Using input device: \"{}\"", input_device.name()?);
     let config: cpal::StreamConfig = input_device.default_input_config()?.into();
@@ -87,10 +84,8 @@ pub fn setup_audio(audio_config: &AudioConfig) -> anyhow::Result<(Stream, Arc<At
             // Minimum sample count for valid volume calculation.
             // println!("Playing because rms {}>{}", rms, -32.);
             upd_playing.store(true, Relaxed);
-        } else {
-            if upd_playing.load(Relaxed) == true {
-                upd_playing.store(false, Relaxed);
-            }
+        } else if upd_playing.load(Relaxed) {
+            upd_playing.store(false, Relaxed);
         }
     };
 
@@ -111,7 +106,7 @@ mod tests {
     use super::*;
     use crate::config::load_config;
     use crate::util::cfg_logging;
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
+    
 
     //#[test]
     fn test_listen() {

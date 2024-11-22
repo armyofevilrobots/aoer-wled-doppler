@@ -1,4 +1,3 @@
-use ureq;
 
 pub fn playpause(baseurl: &str, state: bool) -> Result<(), ureq::Error> {
     let url = format!("{baseurl}/api/virtuals");

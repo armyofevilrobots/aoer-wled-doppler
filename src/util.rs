@@ -1,25 +1,23 @@
 use crate::types::*;
 use anyhow::{anyhow, Result};
-use chrono::{Datelike, Local};
-use fern::colors::{self, Color, ColoredLevelConfig};
+use chrono::Datelike;
+use fern::colors::{Color, ColoredLevelConfig};
 use fern::log_file;
 use log::{self, debug, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use wled_json_api_library::structures::state::State;
 use wled_json_api_library::wled::Wled;
 
 pub(crate) fn cfg_logging(level: usize, log_path: Option<PathBuf>) {
-    let levels = vec![
-        log::LevelFilter::Off,
+    let levels = [log::LevelFilter::Off,
         log::LevelFilter::Error,
         log::LevelFilter::Warn,
         log::LevelFilter::Info,
         log::LevelFilter::Debug,
-        log::LevelFilter::Trace,
-    ];
+        log::LevelFilter::Trace];
     configure_logging(
         *levels.get(level).unwrap_or(&log::LevelFilter::Info),
         log_path,
@@ -67,7 +65,7 @@ fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
                 .level_for("reqwest", log::LevelFilter::Warn)
                 .chain(
                     log_file(&logpath)
-                        .expect(format!("Could not use log file path {:?}", &logpath).as_str()),
+                        .unwrap_or_else(|_| panic!("Could not use log file path {:?}", &logpath)),
                 ),
         )
     } else {
@@ -133,7 +131,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
         for try_ip in info.get_addresses() {
             let url: Url =
                 Url::try_from(format!("http://{}:{}/", try_ip, info.get_port()).as_str())
-                    .expect(format!("Invalid addr/port: {}:{}", try_ip, info.get_port()).as_str());
+                    .unwrap_or_else(|_| panic!("Invalid addr/port: {}:{}", try_ip, info.get_port()));
             info!("Found WLED at: {}", &url);
             let mut wled: Wled = Wled::try_from_url(&url).unwrap();
             // info!("new wled: {wled:?}");
@@ -145,9 +143,9 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
                             full_name.to_string(),
                             WLED {
                                 state: state.clone(),
-                                address: try_ip.clone(),
+                                address: *try_ip,
                                 name: info.get_fullname().to_string(),
-                                wled: wled,
+                                wled,
                             },
                         );
                         return Ok(());
@@ -169,6 +167,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
 
 /// Calculates how much we should dim (from 0.0 as no dimming, to 1.0 as fully dimmed)
 /// based on what time of day it is. Contains much magic (of the black datetime variety).
+#[allow(unused)]
 pub fn calc_dim_pc(
     today: chrono::DateTime<chrono::Local>,
     lat: f64,
@@ -178,8 +177,8 @@ pub fn calc_dim_pc(
     // OK, Let's now calculate
     let today_date = today.date_naive();
     let (sunrise_time, sunset_time) = sunrise::sunrise_sunset(
-        lat as f64,
-        lon as f64,
+        lat,
+        lon,
         today_date.year(),
         today_date.month(),
         today_date.day(),
@@ -219,7 +218,8 @@ pub fn calc_dim_pc(
     }
 }
 
-pub fn calc_dim_pc_scheduled(
+#[allow(unused)]
+pub(crate) fn calc_dim_pc_scheduled(
     now: chrono::DateTime<chrono::Local>,
     lat: f64,
     lon: f64,
@@ -293,7 +293,7 @@ pub fn calc_dim_pc_scheduled(
             debug!("Matched time!");
             let delta_pc = (now as f32 - before.0 as f32) / (after.0 as f32 - before.0 as f32);
             debug!("Delta PC is {}", delta_pc);
-            let delta_amt = (after.1 - before.1);
+            let delta_amt = after.1 - before.1;
             debug!("Delta AMT is {}", delta_amt);
             out = before.1 + delta_pc * delta_amt;
 
@@ -309,8 +309,8 @@ pub fn calc_dim_pc_scheduled(
 mod test {
     use super::*;
     use crate::types::{ScheduleTime, WLEDChange, WLEDSchedule};
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-    use fern::colors::{self, Color, ColoredLevelConfig};
+    use chrono::{DateTime, Datelike, Local, NaiveTime};
+    use fern::colors::{Color, ColoredLevelConfig};
 
     #[test]
     fn test_calc_dimming_schedule() {
@@ -389,15 +389,15 @@ mod test {
         let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
         let today_date = today.date_naive();
         let (sunrise_time, sunset_time) = sunrise::sunrise_sunset(
-            49. as f64,
-            -124. as f64,
+            49_f64,
+            -124_f64,
             today_date.year(),
             today_date.month(),
             today_date.day(),
         );
         let dim_pc = calc_dim_pc(today, 49., -124., 1200);
         info!("DIM PC: {}", dim_pc);
-        let sunset_dt = DateTime::from_timestamp(sunset_time + 0, 0).unwrap();
+        let sunset_dt = DateTime::from_timestamp(sunset_time, 0).unwrap();
         let sunset_dt: DateTime<Local> = sunset_dt.into();
 
         let dim_pc = calc_dim_pc(sunset_dt, 49., -124., 1200);

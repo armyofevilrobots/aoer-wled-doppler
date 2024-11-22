@@ -1,6 +1,5 @@
 use clap::Parser;
-use gtk;
-use inotify::{EventMask, Inotify, WatchMask};
+use inotify::{Inotify, WatchMask};
 use log::{self, debug, info, warn};
 use log::{error, trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
@@ -8,22 +7,20 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{path::PathBuf, sync::atomic::AtomicBool};
-use tray_icon::TrayIconBuilder;
-use tray_icon::TrayIconEvent;
+use std::sync::atomic::AtomicBool;
 mod config;
 mod ledfx;
 mod monitor;
-mod systray;
+// mod systray;
 mod types;
 mod util;
-use crate::config::*;
+use crate::config::{calc_actual_config_file, load_config};
 use crate::ledfx::playpause;
 use crate::types::*;
-use crate::util::*;
+use crate::util::{calc_dim_pc_scheduled, led_set_brightness, update_wled_cache};
 
-const SERVICE_NAME: &'static str = "_wled._tcp.local.";
-const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
+const SERVICE_NAME: &str = "_wled._tcp.local.";
+// const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
 
 fn main() -> ! {
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
@@ -33,7 +30,7 @@ fn main() -> ! {
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
     let cfgfile = match args.config_path.clone() {
         Some(cfgpath) => cfgpath,
-        None => crate::config::calc_actual_config_file(None),
+        None => calc_actual_config_file(None),
     };
     inotify
         .watches()
@@ -129,9 +126,9 @@ fn main() -> ! {
             let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
             let mut leds_ok: usize = 0;
             let mut leds_noconfig: usize = 0;
-            let mut leds_ignore: usize = 0;
+            let leds_ignore: usize = 0;
             let mut leds_err: usize = 0;
-            info!("Found devices: {:?}", found_wled.keys().map(|key|key.clone()).collect::<Vec<String>>());
+            info!("Found devices: {:?}", found_wled.keys().cloned().collect::<Vec<String>>());
 
             for (name, wled) in found_wled.iter_mut() {
                 debug!("Processing {}", name);
@@ -152,7 +149,7 @@ fn main() -> ! {
                                 today,
                                 svc_config.lat as f64,
                                 svc_config.lon as f64,
-                                &led_schedule,
+                                led_schedule,
                             );
                             debug!("Dim_PC is {}", dim_pc);
 

@@ -62,15 +62,15 @@ fn bootstrap() -> Result<PathBuf> {
 }
 
 pub fn calc_actual_config_file(cfg_path: Option<PathBuf>)-> PathBuf{
-    let cfgdir = match cfg_path {
+    
+    match cfg_path {
         Some(tmp_path) => tmp_path,
         None => {
             let mut tmp_path = calc_config_dir();
             tmp_path.push("config.ron");
             tmp_path
         },
-    };
-    cfgdir
+    }
 }
 
 pub fn load_config(cfg_path: Option<PathBuf>) -> Result<Config> {
@@ -87,7 +87,7 @@ pub fn load_config(cfg_path: Option<PathBuf>) -> Result<Config> {
 /* These tests are f%^(@*# awful, because they mutate files. */
 mod tests {
     use super::*;
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc};
+    
 
     #[test]
     fn test_setup_homedir() {

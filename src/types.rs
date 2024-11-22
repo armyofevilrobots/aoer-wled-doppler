@@ -1,5 +1,4 @@
-use chrono::offset::{FixedOffset, Local, Offset};
-use chrono::{Datelike, TimeZone, Timelike};
+use chrono::Datelike;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -21,6 +20,7 @@ pub(crate) struct Args {
 
 #[derive(Debug)]
 pub struct WLED {
+    #[allow(unused)]
     pub state: State,
     pub address: IpAddr,
     pub name: String,
@@ -59,14 +59,14 @@ impl ScheduleTime {
         match self {
             Self::Time(time) => {
                 let today_date = today_date
-                    .and_time(time.clone())
+                    .and_time(*time)
                     .expect("Invalid input time");
                 today_date.timestamp() as u64
             }
             Self::Sunrise => {
                 let (sunrise_time, _) = sunrise::sunrise_sunset(
-                    lat as f64,
-                    lon as f64,
+                    lat,
+                    lon,
                     today_date.year(),
                     today_date.month(),
                     today_date.day(),
@@ -75,8 +75,8 @@ impl ScheduleTime {
             }
             Self::SunriseOffset(seconds) => {
                 let (sunrise_time, _) = sunrise::sunrise_sunset(
-                    lat as f64,
-                    lon as f64,
+                    lat,
+                    lon,
                     today_date.year(),
                     today_date.month(),
                     today_date.day(),
@@ -85,8 +85,8 @@ impl ScheduleTime {
             }
             Self::Sunset => {
                 let (_, sunset_time) = sunrise::sunrise_sunset(
-                    lat as f64,
-                    lon as f64,
+                    lat,
+                    lon,
                     today_date.year(),
                     today_date.month(),
                     today_date.day(),
@@ -95,8 +95,8 @@ impl ScheduleTime {
             }
             Self::SunsetOffset(seconds) => {
                 let (_, sunset_time) = sunrise::sunrise_sunset(
-                    lat as f64,
-                    lon as f64,
+                    lat,
+                    lon,
                     today_date.year(),
                     today_date.month(),
                     today_date.day(),
@@ -245,7 +245,7 @@ impl Default for Config {
 #[cfg(test)]
 mod test {
     use crate::types::ScheduleTime;
-    use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    use chrono::Local;
 
     #[test]
     fn test_scheduletime() {
@@ -301,7 +301,7 @@ mod test {
         );
         println!(
             "That offset would be SUNSET-NOW = {}",
-            st_ts as i64 - now.timestamp() as i64
+            st_ts as i64 - now.timestamp()
         );
         println!("---");
 
