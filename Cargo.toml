@@ -1,6 +1,6 @@
 [package]
 name = "aoer-wled-doppler"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 default-run="aoer-wled-doppler"
 
@@ -13,9 +13,9 @@ jack=["cpal/jack"]
 name = "aoer-wled-doppler"
 path = "src/main.rs"
 
-[[bin]]
-name = "uimock"
-path = "src/uimock.rs"
+#[[bin]]
+#name = "uimock"
+#path = "src/uimock.rs"
 
 [dependencies]
 wled-json-api-library = "0.1.7"
@@ -36,12 +36,12 @@ ringbuf = "0.4.1"
 ureq = {version="2.10.0", features=["json"]}
 serde_json = "1.0.121"
 clap = { version = "4.5.20", features = ["derive"] }
-tray-icon = "0.19.1"
-gtk = "0.18.1"
-image = "0.25.5"
-muda = "0.15.3"
-iced = { version = "0.13.1", features = ["advanced", "image", "svg"] }
-iced_table = "0.13.0"
-iced_widget = { version = "0.13.4", features = ["wgpu", "svg", "advanced", "canvas"] }
+#tray-icon = "0.19.1"
+#gtk = "0.18.1"
+#image = "0.25.5"
+#muda = "0.15.3"
+#iced = { version = "0.13.1", features = ["advanced", "image", "svg"] }
+#iced_table = "0.13.0"
+#iced_widget = { version = "0.13.4", features = ["wgpu", "svg", "advanced", "canvas"] }
 inotify = "0.11.0"
 
