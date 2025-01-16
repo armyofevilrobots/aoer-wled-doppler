@@ -1,0 +1,254 @@
+{
+  "lat": 49.0,
+  "lon": -124.0,
+  "leds": {
+    "wled-hearth-candle-3._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 3,
+      "max_bri": 100
+    },
+    "wled-hearth-candle-1._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 30,
+      "max_bri": 255
+    },
+    "wled-derek-matrix-1._wled._tcp.local.": {
+      "schedule": {
+        "ByName": "matrix"
+      },
+      "min_bri": 1,
+      "max_bri": 5
+    },
+    "wled-derek-desk._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 3,
+      "max_bri": 30
+    },
+    "wled-hearth-pots._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 3,
+      "max_bri": 200
+    },
+    "wled-pwmcandle._wled._tcp.local.": {
+      "schedule": {
+        "ByName": "helen_bedside"
+      },
+      "min_bri": 5,
+      "max_bri": 240
+    },
+    "wled-vu-strip._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 1,
+      "max_bri": 5
+    },
+    "wled-hearth-candle-2._wled._tcp.local.": {
+      "schedule": "Default",
+      "min_bri": 130,
+      "max_bri": 255
+    },
+    "wled-barback._wled._tcp.local.": {
+      "schedule": {
+        "ByName": "barback_schedule"
+      },
+      "min_bri": 2,
+      "max_bri": 200
+    }
+  },
+  "loglevel": 3,
+  "logfile": "/home/derek/.wled-doppler/wled-doppler.log",
+  "audio_config": {
+    "input_device": "default",
+    "jack": false,
+    "ledfx_threshold_db": -64.0
+  },
+  "ledfx_url": "http://localhost:8888",
+  "ledfx_idle_cycles": 2,
+  "cycle_seconds": 3.0,
+  "schedule": {
+    "helen_bedside": [
+      {
+        "time": {
+          "Time": "07:30:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "Time": "08:30:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "20:30:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "21:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      }
+    ],
+    "matrix": [
+      {
+        "time": {
+          "Time": "07:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "Time": "07:00:00"
+        },
+        "change": {
+          "Preset": 2
+        }
+      },
+      {
+        "time": {
+          "Time": "08:00:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "15:30:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "19:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "Time": "21:00:00"
+        },
+        "change": {
+          "Preset": 1
+        }
+      }
+    ],
+    "barback_schedule": [
+      {
+        "time": {
+          "Time": "05:30:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "Time": "06:00:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "20:00:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "21:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      }
+    ],
+    "default": [
+      {
+        "time": {
+          "Time": "07:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "Time": "08:00:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "15:30:00"
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "Time": "19:00:00"
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      }
+    ],
+    "daylight": [
+      {
+        "time": "Sunrise",
+        "change": {
+          "Brightness": 0.0
+        }
+      },
+      {
+        "time": {
+          "SunriseOffset": 3600
+        },
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": "Sunset",
+        "change": {
+          "Brightness": 1.0
+        }
+      },
+      {
+        "time": {
+          "SunsetOffset": 3600
+        },
+        "change": {
+          "Brightness": 0.0
+        }
+      }
+    ]
+  },
+  "restart_on_cfg_change": "Exit",
+  "tray_icon": true,
+  "bind_address": "localhost:3178"
+}
