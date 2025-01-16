@@ -1,25 +1,82 @@
+use crate::Config;
 use astra::{Body, Request, Response, ResponseBuilder, Server};
 use http::method::Method;
-use log::{self, info}; 
-use ron;
+use lazy_static::lazy_static;
+use log::{self, error, warn, info};
 use matchit::Match;
+use ron;
 use std::{
     collections::HashMap,
     io::Read,
     sync::{Arc, Mutex},
 };
 
-use crate::Config;
-
 type Router = matchit::Router<fn(&Arc<Mutex<State>>, Request) -> Response>;
 type Params = HashMap<String, String>;
+
+lazy_static! {
+    static ref STATIC_FILES: HashMap<&'static str, (&'static str, Vec<u8>)> = {
+        let mut static_builder = HashMap::new();
+        for (fullpath, val) in include!("webui_content.rs") {
+            let key = fullpath.split("/").last().unwrap();
+            let encoding_hint = fullpath.split(".").last().unwrap();
+            let encoding = match encoding_hint {
+                "html" => "text/html",
+                "js" => "text/javascript",
+                "png" => "image/png",
+                "ico" => "image/x-icon",
+                _ => "x-application-unknown",
+            };
+            static_builder.insert(key, (encoding, val));
+        }
+        static_builder
+    };
+}
 
 pub(crate) struct State {
     pub cfg: Config,
 }
 
-fn home(_state: &Arc<Mutex<State>>, _: Request) -> Response {
-    Response::new(Body::new("Hello World via router!"))
+fn home(_state: &Arc<Mutex<State>>, req: Request) -> Response {
+    let params = req.extensions().get::<Params>().unwrap();
+    match *req.method() {
+        Method::GET => match params.get("p") {
+            Some(path) => {
+                let path = if path == "/" {
+                    "index.html".to_string()
+                } else {
+                    // This is hackish, but we never can have a slash in a filename.
+                    path.clone().replace("/", "")
+                };
+                if let Some((encoding, content)) = STATIC_FILES.get(path.as_str()) {
+                    info!("[GET]:200 - {}", &path);
+                    ResponseBuilder::new()
+                        .header("Content-Type", *encoding)
+                        .body(Body::new(content.clone()))
+                        .unwrap()
+                } else {
+                    warn!("[GET]:404 - {}", &path);
+                    ResponseBuilder::new()
+                        .status(404)
+                        .body(Body::new("404"))
+                        .unwrap()
+                }
+            }
+            None => {
+                error!("[GET]:500 - {:?}", params.get("p"));
+                ResponseBuilder::new()
+                    .status(500)
+                    .body(Body::new("500 unwrapping request path"))
+                    .unwrap()
+            },
+        },
+        _ => {
+            warn!("[GET]:405 - {:?}", params.get("p"));
+            ResponseBuilder::new()
+            .status(405)
+            .body(Body::new("405"))
+              .unwrap()},
+    }
 }
 
 fn config(state: &Arc<Mutex<State>>, mut req: Request) -> Response {
@@ -64,27 +121,29 @@ fn config(state: &Arc<Mutex<State>>, mut req: Request) -> Response {
         &Method::PUT => {
             info!("Got a PUT with data: {:?}", &body_string);
             match serde_json::from_str::<Config>(body_string.as_str()) {
-                Ok(cfg_json) => match ron::ser::to_string_pretty(&cfg_json, ron::ser::PrettyConfig::default()) {
-                    Ok(json_as_string) => {
-                        let (status, outbody) = match std::fs::write(
-                            &cfg_path.clone().expect("Invalid config path in server"),
-                            &json_as_string.as_bytes(),
-                        ) {
-                            Ok(_) => (200, json_as_string.clone()),
-                            Err(_) => (400, format!("{{\"Err\":\"Failed to save JSON.\"}}")),
-                        };
-                        ResponseBuilder::new()
-                            .status(status)
+                Ok(cfg_json) => {
+                    match ron::ser::to_string_pretty(&cfg_json, ron::ser::PrettyConfig::default()) {
+                        Ok(json_as_string) => {
+                            let (status, outbody) = match std::fs::write(
+                                &cfg_path.clone().expect("Invalid config path in server"),
+                                &json_as_string.as_bytes(),
+                            ) {
+                                Ok(_) => (200, json_as_string.clone()),
+                                Err(_) => (400, format!("{{\"Err\":\"Failed to save JSON.\"}}")),
+                            };
+                            ResponseBuilder::new()
+                                .status(status)
+                                .header("Content-Type", "application/json")
+                                .body(Body::new(outbody))
+                                .unwrap()
+                        }
+                        Err(_) => ResponseBuilder::new()
+                            .status(400)
                             .header("Content-Type", "application/json")
-                            .body(Body::new(outbody))
-                            .unwrap()
+                            .body(Body::new("{{\"Err\":\"Not Implemented\"}}"))
+                            .unwrap(),
                     }
-                    Err(_) => ResponseBuilder::new()
-                        .status(400)
-                        .header("Content-Type", "application/json")
-                        .body(Body::new("{{\"Err\":\"Not Implemented\"}}"))
-                        .unwrap(),
-                },
+                }
                 Err(_err) => ResponseBuilder::new()
                     .status(400)
                     .header("Content-Type", "application/json")
@@ -110,8 +169,8 @@ pub(crate) fn spawn(cfg: Config) {
 
     let router = Arc::new({
         let mut router = Router::new();
-        router.insert("/", home).unwrap();
         router.insert("/json/config", config).unwrap();
+        router.insert("{*p}", home).unwrap();
         // router.insert("/user/:id", get_user).unwrap();
         router
     });

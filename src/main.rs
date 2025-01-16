@@ -60,6 +60,7 @@ fn main() {
 
     let die_arc: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let die_arc_thread = die_arc.clone();
+    let tray_svc_config = svc_config.clone();
     if svc_config.tray_icon {
         info!("Starting up tray icon...");
         let (config_msg, exit_msg) = systray::launch_taskbar_icon();
@@ -84,9 +85,14 @@ fn main() {
                 if let Ok(cid) = config_msg.lock() {
                     if let Some(menuid) = cid.as_ref() {
                         if menuid == event.id() {
-                            info!("Launching browser...");
-                            opener::open_browser("https://armyofevilrobots.com/")
-                                .unwrap_or_else(|_|warn!("Failed to launch browser."));
+                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone(){
+                                // Rewrite the URL if we bound everything.
+                                *urlbase = urlbase.replace("0.0.0.0", "localhost"); 
+                                info!("Launching browser...");
+                                opener::open_browser(format!("http://{}/", urlbase))
+                                    .unwrap_or_else(|_|warn!("Failed to launch browser."));
+                                
+                            }
                         }
                     }
                 }
@@ -127,6 +133,7 @@ fn main() {
 
     let mut quiet_cycles: usize = 0;
     let mut inotify_buffer = [0u8; 4096];
+    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> = HashMap::new();
     loop {
         loop {
             info!("Checking inotify events...");
@@ -206,7 +213,7 @@ fn main() {
                         if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
                             // Yay, a match. figure out the dimming.
                             debug!("Found a working schedule for spec: {:?}", &led_schedule);
-                            let (dim_pc, preset_id) = calc_led_state_scheduled(
+                            let (dim_pc, preset_id, power_state) = calc_led_state_scheduled(
                                 today,
                                 svc_config.lat as f64,
                                 svc_config.lon as f64,
@@ -217,8 +224,8 @@ fn main() {
 
                             if let Some(id) = preset_id {
                                 debug!("Setting LED {} to preset {}", name, id);
-                                if let Ok(_) = wled.wled.get_state_from_wled() {
-                                    if let Some(state) = &wled.wled.state {
+                                if let Ok(_) = wled.device.get_state_from_wled() {
+                                    if let Some(state) = &wled.device.state {
                                         if state.ps != Some(id as i32) {
                                             match led_set_preset(wled, id) {
                                                 Ok(_) => (),

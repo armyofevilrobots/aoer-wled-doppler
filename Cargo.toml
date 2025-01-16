@@ -13,6 +13,10 @@ jack=["cpal/jack"]
 name = "aoer-wled-doppler"
 path = "src/main.rs"
 
+[[bin]]
+name = "ledfx-trigger"
+path = "src/ledfx-trigger.rs"
+
 # [[bin]]
 # name = "uimock"
 # path = "src/uimock.rs"
@@ -48,4 +52,5 @@ opener = "0.7.2"
 astra = "0.4.0"
 matchit = "0.8.5"
 http = "1.1.0"
+lazy_static = "1.5.0"
 

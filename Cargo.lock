@@ -140,6 +140,7 @@ dependencies = [
  "humantime",
  "image",
  "inotify",
+ "lazy_static",
  "log",
  "matchit",
  "mdns-sd",

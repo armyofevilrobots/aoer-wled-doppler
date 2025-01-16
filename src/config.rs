@@ -54,6 +54,7 @@ fn bootstrap() -> Result<PathBuf> {
             restart_on_cfg_change: CfgChangeAction::No,
             tray_icon: false,
             bind_address: Some("localhost:3178".to_string()),
+            vis_schedule: None,
             config_path: Some(cfgpath.clone()),
 
         };

@@ -19,12 +19,18 @@ pub(crate) struct Args {
 }
 
 #[derive(Debug)]
+pub enum Device{
+    Wled(Wled),
+    Tasmota,
+}
+
+#[derive(Debug)]
 pub struct WLED {
     #[allow(unused)]
-    pub state: State,
+    pub state: Option<State>,
     pub address: IpAddr,
     pub name: String,
-    pub wled: Wled,
+    pub device: Wled,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,6 +117,7 @@ impl ScheduleTime {
 pub enum WLEDChange {
     Brightness(f32),
     Preset(u16),
+    Power(bool),
     None,
 }
 
@@ -186,6 +193,12 @@ pub enum CfgChangeAction{
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VisualizationSchedule{
+    pub start: ScheduleTime,
+    pub end: ScheduleTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub lat: f32,
     pub lon: f32,
@@ -207,8 +220,10 @@ pub struct Config {
     #[serde(default="default_tray_icon")]
     pub tray_icon: bool,
     pub bind_address: Option<String>,
+    pub vis_schedule: Option<VisualizationSchedule>,
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
+    
 }
 
 fn default_cfg_change()->CfgChangeAction{
@@ -258,6 +273,7 @@ impl Default for Config {
             restart_on_cfg_change: default_cfg_change(),
             tray_icon: false,
             bind_address: None,
+            vis_schedule: None,
             config_path: None,
         }
     }
