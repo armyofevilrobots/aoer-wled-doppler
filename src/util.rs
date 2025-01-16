@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use chrono::Datelike;
 use fern::colors::{Color, ColoredLevelConfig};
 use fern::log_file;
-use log::{self, debug, error, info, trace, warn};
+use log::{self, error, info, trace, warn};
 use mdns_sd::ServiceInfo;
 use reqwest::Url;
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ fn configure_logging(loglevel: log::LevelFilter, logfile: Option<PathBuf>) {
 
 /// Set the brightness of the given wled device.
 pub fn led_set_preset(wled: &mut WLED, new_preset: u16) -> Result<()> {
-    wled.wled.state = Some(State {
+    wled.device.state = Some(State {
         on: None,
         bri: None,
         transition: None,
@@ -98,7 +98,33 @@ pub fn led_set_preset(wled: &mut WLED, new_preset: u16) -> Result<()> {
         playlist: None,
         seg: None,
     });
-    match wled.wled.flush_state() {
+    match wled.device.flush_state() {
+        Ok(response) => {
+            trace!(
+                "    - HTTP response: {:?}",
+                response.text().unwrap_or("UNKNOWN ERROR".to_string())
+            );
+            Ok(())
+        }
+        Err(err) => {
+            error!(
+                "    - Failed to update WLED: '{}' with error: {:?}",
+                &wled.name, err
+            );
+            Err(anyhow!(
+                "Failed to update wled {} with error {:?}",
+                &wled.name,
+                err
+            ))
+        }
+    }
+}
+pub fn led_set_power(wled: &mut WLED, power: bool) -> Result<()> {
+    wled.device.state = Some(State {
+        on: Some(power),
+        ..Default::default()
+    });
+    match wled.device.flush_state() {
         Ok(response) => {
             trace!(
                 "    - HTTP response: {:?}",
@@ -122,7 +148,7 @@ pub fn led_set_preset(wled: &mut WLED, new_preset: u16) -> Result<()> {
 
 /// Set the brightness of the given wled device.
 pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
-    wled.wled.state = Some(State {
+    wled.device.state = Some(State {
         on: if new_bri > 0 { Some(true) } else { Some(false) },
         bri: Some(new_bri),
         transition: None,
@@ -141,7 +167,7 @@ pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
         playlist: None,
         seg: None,
     });
-    match wled.wled.flush_state() {
+    match wled.device.flush_state() {
         Ok(response) => {
             trace!(
                 "    - HTTP response: {:?}",
@@ -165,6 +191,7 @@ pub fn led_set_brightness(wled: &mut WLED, new_bri: u8) -> Result<()> {
 
 pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WLED>) -> Result<()> {
     let full_name = info.get_fullname().to_string();
+    let short_name = info.get_hostname().to_string();
     let old_wled = found_wled.get(&full_name);
     if old_wled.is_none()
         || (old_wled.is_some() && !info.get_addresses().contains(&old_wled.unwrap().address))
@@ -179,7 +206,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
                     .unwrap_or_else(|_| {
                         panic!("Invalid addr/port: {}:{}", try_ip, info.get_port())
                     });
-            info!("Found WLED at: {}", &url);
+            info!("Found WLED {} at: {}", &short_name, &url);
             let mut wled: Wled = Wled::try_from_url(&url).unwrap();
             // info!("new wled: {wled:?}");
             match wled.get_state_from_wled() {
@@ -189,10 +216,10 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
                         found_wled.insert(
                             full_name.to_string(),
                             WLED {
-                                state: state.clone(),
+                                state: Some(state.clone()),
                                 address: *try_ip,
                                 name: info.get_fullname().to_string(),
-                                wled,
+                                device: wled,
                             },
                         );
                         return Ok(());
@@ -214,7 +241,7 @@ pub fn update_wled_cache(info: &ServiceInfo, found_wled: &mut HashMap<String, WL
 
 /// Calculates how much we should dim (from 0.0 as no dimming, to 1.0 as fully dimmed)
 /// based on what time of day it is. Contains much magic (of the black datetime variety).
-#[allow(unused)]
+//#[allow(unused)]
 pub fn calc_dim_pc(
     today: chrono::DateTime<chrono::Local>,
     lat: f64,
@@ -271,7 +298,7 @@ pub(crate) fn calc_led_state_scheduled(
     lat: f64,
     lon: f64,
     schedule: &Vec<WLEDScheduleItem>,
-) -> (f32, Option<u16>) {
+) -> (f32, Option<u16>, Option<bool>) {
     // Generate initial event lists.
     let mut bri_ev: Vec<(u64, f32)> = schedule
         .clone()
@@ -304,37 +331,42 @@ pub(crate) fn calc_led_state_scheduled(
             )
         })
         .collect();
+    let mut power_ev: Vec<(u64, bool)> = schedule
+        .clone()
+        .iter()
+        .filter(|i| matches!(i.change, WLEDChange::Power(_)))
+        .map(|i| {
+            (
+                i.time.to_timestamp(lat, lon),
+                if let WLEDChange::Power(power) = i.change {
+                    power
+                } else {
+                    panic!("WTF?! Unreachable preset.");
+                    false // Note, this is hopefully unreachable.
+                },
+            )
+        })
+        .collect();
 
     // Add offsets to beginning and end...
+    let mut tmp_bri_ev = bri_ev.clone();
+    let mut tmp_pre_ev = pre_ev.clone();
     if let Some(last) = bri_ev.last() {
-        bri_ev.insert(0, (last.0 - (24 * 3600), last.1));
+        tmp_bri_ev.insert(0, (last.0 - (24 * 3600), last.1));
     }
     if let Some(first) = bri_ev.first() {
-        bri_ev.push((first.0 + (24 * 3600), first.1));
+        tmp_bri_ev.push((first.0 + (24 * 3600), first.1));
     }
+    bri_ev = tmp_bri_ev;
     if let Some(last) = pre_ev.last() {
-        pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
+        tmp_pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
     }
     if let Some(first) = pre_ev.first() {
-        pre_ev.push((first.0 + (24 * 3600), first.1));
+        tmp_pre_ev.push((first.0 + (24 * 3600), first.1));
     }
+    pre_ev = tmp_pre_ev;
 
     // Same for presets
-    if pre_ev.len() > 1 {
-        // Add offsets to beginning and end...
-        if let Some(last) = pre_ev.last() {
-            pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
-        }
-        if let Some(first) = pre_ev.first() {
-            pre_ev.push((first.0 + (24 * 3600), first.1));
-        }
-        if let Some(last) = pre_ev.last() {
-            pre_ev.insert(0, (last.0 - (24 * 3600), last.1));
-        }
-        if let Some(first) = pre_ev.first() {
-            pre_ev.push((first.0 + (24 * 3600), first.1));
-        }
-    }
 
     // Then we determine current time and where that sits.
     let now: i64 = now.timestamp();
@@ -342,13 +374,12 @@ pub(crate) fn calc_led_state_scheduled(
     if bri_ev.len() < 2 || pre_ev.len() == 1 {
         // Note that an event length of "1" is the only invalid
         // preset config. No changes is fine, and more than 1 is always valid.
-        return (0., None); // This is fucked. Should always have a couple entries.
+        error!("Invalid schedule found: {:?}.", &schedule);
+        return (0., None, None); // This is fucked. Should always have a couple entries.
     }
 
     let mut out: f32 = 0.;
 
-    debug!("Calculating dimming for schedule: {:?}", bri_ev);
-    debug!("My current time is {:?}", now);
     for i in 0..(bri_ev.len() - 1) {
         let before = bri_ev
             .get(i)
@@ -357,21 +388,16 @@ pub(crate) fn calc_led_state_scheduled(
             .get(i + 1)
             .expect("Failed to index into a known position.");
         if now >= before.0 as i64 && now <= after.0 as i64 {
-            debug!("Matched time!");
             let delta_pc = (now as f32 - before.0 as f32) / (after.0 as f32 - before.0 as f32);
-            debug!("Delta PC is {}", delta_pc);
             let delta_amt = after.1 - before.1;
-            debug!("Delta AMT is {}", delta_amt);
             out = before.1 + delta_pc * delta_amt;
 
-            debug!("Calced out to {}", out);
             break;
         }
     }
 
-    debug!("Pre ev length is {}", pre_ev.len());
     let mut preset_out: Option<u16> = None;
-    if pre_ev.len() > 2 {
+    if pre_ev.len() >= 2 {
         for i in 0..(pre_ev.len() - 1) {
             let before = pre_ev
                 .get(i)
@@ -380,15 +406,16 @@ pub(crate) fn calc_led_state_scheduled(
                 .get(i + 1)
                 .expect("Failed to index into a known position.");
             if now >= before.0 as i64 && now <= after.0 as i64 {
-                debug!("Matched preset time!");
                 preset_out = Some(before.1);
-                debug!("Calced out to {}", out);
                 break;
             }
         }
     }
 
-    (out, preset_out)
+    let mut power_out: Option<bool> = None;
+
+
+    (out, preset_out, power_out)
 }
 
 #[cfg(test)]

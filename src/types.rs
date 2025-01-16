@@ -19,15 +19,21 @@ pub(crate) struct Args {
 }
 
 #[derive(Debug)]
-pub struct WLED {
-    #[allow(unused)]
-    pub state: State,
-    pub address: IpAddr,
-    pub name: String,
-    pub wled: Wled,
+pub enum Device{
+    Wled(Wled),
+    Tasmota,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
+pub struct WLED {
+    #[allow(unused)]
+    pub state: Option<State>,
+    pub address: IpAddr,
+    pub name: String,
+    pub device: Wled,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AudioConfig {
     #[serde(default = "default_input_device")]
     pub input_device: String,
@@ -111,6 +117,7 @@ impl ScheduleTime {
 pub enum WLEDChange {
     Brightness(f32),
     Preset(u16),
+    Power(bool),
     None,
 }
 
@@ -176,7 +183,22 @@ impl Default for LEDBrightnessConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub enum CfgChangeAction{
+    #[default]
+    No,
+    Exit,
+    Reload,
+}
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VisualizationSchedule{
+    pub start: ScheduleTime,
+    pub end: ScheduleTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub lat: f32,
     pub lon: f32,
@@ -194,10 +216,21 @@ pub struct Config {
     #[serde(default = "default_schedule")]
     pub schedule: HashMap<String, WLEDSchedule>,
     #[serde(default="default_cfg_change")]
-    pub restart_on_cfg_change: bool,
+    pub restart_on_cfg_change: CfgChangeAction,
+    #[serde(default="default_tray_icon")]
+    pub tray_icon: bool,
+    pub bind_address: Option<String>,
+    pub vis_schedule: Option<VisualizationSchedule>,
+    #[serde(skip)]
+    pub config_path: Option<PathBuf>,
+    
 }
 
-fn default_cfg_change()->bool{
+fn default_cfg_change()->CfgChangeAction{
+    CfgChangeAction::No
+}
+
+fn default_tray_icon()-> bool{
     false
 }
 
@@ -238,6 +271,10 @@ impl Default for Config {
             cycle_seconds: Default::default(),
             schedule: default_schedule(),
             restart_on_cfg_change: default_cfg_change(),
+            tray_icon: false,
+            bind_address: None,
+            vis_schedule: None,
+            config_path: None,
         }
     }
 }
@@ -327,6 +364,14 @@ mod test {
             .expect("Invalid datetime")
             .with_timezone(&Local::now().timezone());
         println!("Naive noon today is/was {:?}", datetime);
+        println!("That TS is {}", st_ts);
+
+        let st = ScheduleTime::Time(chrono::NaiveTime::from_hms(21, 50, 00));
+        let st_ts = st.to_timestamp(49., -124.);
+        let datetime = chrono::DateTime::from_timestamp(st_ts as i64, 0)
+            .expect("Invalid datetime")
+            .with_timezone(&Local::now().timezone());
+        println!("Naive 21:50 today is/was {:?}", datetime);
         println!("That TS is {}", st_ts);
     }
 }

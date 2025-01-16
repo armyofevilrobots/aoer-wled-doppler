@@ -3,20 +3,25 @@ use inotify::{Inotify, WatchMask};
 use log::{self, debug, info, warn};
 use log::{error, trace};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
-use util::led_set_preset;
+use opener;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
-use wled_json_api_library::structures::state::State;
-use wled_json_api_library::wled::Wled;
+use tray_icon::menu::MenuEvent;
+use tray_icon::TrayIconEvent;
+use util::led_set_preset;
+// use wled_json_api_library::structures::state::State;
+// use wled_json_api_library::wled::Wled;
 mod config;
 mod ledfx;
 mod monitor;
-// mod systray;
+mod systray;
 mod types;
 mod util;
+mod webui;
 use crate::config::{calc_actual_config_file, load_config};
 use crate::ledfx::playpause;
 use crate::types::*;
@@ -25,7 +30,7 @@ use crate::util::{calc_led_state_scheduled, led_set_brightness, update_wled_cach
 const SERVICE_NAME: &str = "_wled._tcp.local.";
 // const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
 
-fn main() -> ! {
+fn main() {
     let mut found_wled: HashMap<String, WLED> = HashMap::new();
 
     let args = Args::parse();
@@ -43,7 +48,7 @@ fn main() -> ! {
         )
         .expect("Failed to add inotify watch");
 
-    let svc_config = match load_config(args.config_path) {
+    let mut svc_config = match load_config(args.config_path.clone()) {
         Ok(config) => config,
         Err(err) => {
             // panic!("Failed to load config: {:?}", err),
@@ -51,6 +56,50 @@ fn main() -> ! {
             std::process::exit(-1);
         }
     };
+
+
+    let die_arc: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let die_arc_thread = die_arc.clone();
+    let tray_svc_config = svc_config.clone();
+    if svc_config.tray_icon {
+        info!("Starting up tray icon...");
+        let (config_msg, exit_msg) = systray::launch_taskbar_icon();
+
+        thread::spawn(move || loop {
+            if let Ok(event) = TrayIconEvent::receiver().try_recv() {
+                println!("tray event: {event:?}");
+            }
+
+            if let Ok(event) = MenuEvent::receiver().try_recv() {
+                println!("tray event: {event:?}");
+                if let Ok(qid) = exit_msg.lock() {
+                    if let Some(menuid) = qid.as_ref() {
+                        if menuid == event.id() {
+                            error!("Received QUIT from TaskBar icon!");
+                            let mut die = die_arc_thread.lock().unwrap();
+                            *die = true;
+                            break;
+                        }
+                    }
+                }
+                if let Ok(cid) = config_msg.lock() {
+                    if let Some(menuid) = cid.as_ref() {
+                        if menuid == event.id() {
+                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone(){
+                                // Rewrite the URL if we bound everything.
+                                *urlbase = urlbase.replace("0.0.0.0", "localhost"); 
+                                info!("Launching browser...");
+                                opener::open_browser(format!("http://{}/", urlbase))
+                                    .unwrap_or_else(|_|warn!("Failed to launch browser."));
+                                
+                            }
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_secs_f64(0.1));
+        });
+    }
 
     info!("==========================================================");
     info!("= aoer-wled-doppler starting. Scanning for WLED devices...");
@@ -62,6 +111,18 @@ fn main() -> ! {
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
 
+
+    ///// Webserver
+    if let Some(server_bind) = &svc_config.bind_address{
+        info!("Spawning webserver: {}", &server_bind);
+        let cfg = svc_config.clone();
+        thread::spawn(move||webui::spawn(cfg));
+        
+    }else{
+        info!("No bind config, not spawning webserver.");
+    }
+    ///// /Webserver
+
     // OK, now we setup the monitoring...
     let (_stream, playing_arc) = if let Some(audio_config) = svc_config.audio_config {
         let (mon, playing_arc) = monitor::setup_audio(&audio_config).unwrap();
@@ -72,6 +133,7 @@ fn main() -> ! {
 
     let mut quiet_cycles: usize = 0;
     let mut inotify_buffer = [0u8; 4096];
+    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> = HashMap::new();
     loop {
         loop {
             info!("Checking inotify events...");
@@ -131,7 +193,7 @@ fn main() -> ! {
             let mut leds_noconfig: usize = 0;
             let leds_ignore: usize = 0;
             let mut leds_err: usize = 0;
-            info!(
+            debug!(
                 "Found devices: {:?}",
                 found_wled.keys().cloned().collect::<Vec<String>>()
             );
@@ -151,17 +213,19 @@ fn main() -> ! {
                         if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
                             // Yay, a match. figure out the dimming.
                             debug!("Found a working schedule for spec: {:?}", &led_schedule);
-                            let (dim_pc, preset_id) = calc_led_state_scheduled(
+                            let (dim_pc, preset_id, power_state) = calc_led_state_scheduled(
                                 today,
                                 svc_config.lat as f64,
                                 svc_config.lon as f64,
                                 led_schedule,
                             );
+                            debug!("Got dim/preset result of ({:?}, {:?}) for {}",
+                                   &dim_pc, &preset_id, &name);
 
                             if let Some(id) = preset_id {
                                 debug!("Setting LED {} to preset {}", name, id);
-                                if let Ok(_) = wled.wled.get_state_from_wled() {
-                                    if let Some(state) = &wled.wled.state {
+                                if let Ok(_) = wled.device.get_state_from_wled() {
+                                    if let Some(state) = &wled.device.state {
                                         if state.ps != Some(id as i32) {
                                             match led_set_preset(wled, id) {
                                                 Ok(_) => (),
@@ -172,12 +236,18 @@ fn main() -> ! {
                                             }
                                         } else {
                                             debug!(
-                                                "Found matching state already for {}:{}",
+                                                "Found matching preset state already for {}:{}",
                                                 name, id
                                             );
                                         }
+                                    }else{
+                                        warn!("LED {} has no state data.", name);
                                     }
+                                }else{
+                                    error!("Failed to get current LED state for {}.",name);
                                 }
+                            }else{
+                                debug!("No preset ID set for wled {} now.", name)
                             }
 
                             debug!("Dim_PC is {}", dim_pc);
@@ -187,7 +257,7 @@ fn main() -> ! {
                             let out = ((gap * dim_pc) + led_bri_config.min_bri as f32)
                                 .max(0.)
                                 .min(255.) as u8;
-                            info!(
+                            debug!(
                                 "Setting LED:{} to BRI{} (min:{},max:{},dim:{})",
                                 name, out, led_bri_config.min_bri, led_bri_config.max_bri, dim_pc
                             );
@@ -236,13 +306,53 @@ fn main() -> ! {
                     found_wled.len()
                 );
             }
+            {
+                // Locking die arc...
+                let die = die_arc.lock().unwrap();
+                if *die {
+                    break;
+                }
+            } // Locking die arc...
 
             //std::thread::sleep(Duration::from_secs(10));
             std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
         } // Loop wleds
-        if svc_config.restart_on_cfg_change {
-            info!("We would reload config here...");
-            std::process::exit(0);
+        match svc_config.restart_on_cfg_change {
+            CfgChangeAction::No => (),
+            CfgChangeAction::Exit => {
+                info!("Exiting due to a config change.");
+                std::process::exit(0);
+            }
+            CfgChangeAction::Reload => {
+                info!("Reloading due to a config change.");
+                let old_loglevel = svc_config.loglevel;
+                let old_logfile = svc_config.logfile.clone();
+                let old_tray_icon = svc_config.tray_icon;
+                svc_config = match load_config(args.config_path.clone()) {
+                    Ok(config) => config,
+                    Err(err) => {
+                        // panic!("Failed to load config: {:?}", err),
+                        eprintln!("Failed to load config: {:?}", err);
+                        std::process::exit(-1);
+                    }
+                };
+                if old_loglevel != svc_config.loglevel
+                    || old_logfile != svc_config.logfile
+                    || old_tray_icon != svc_config.tray_icon
+                {
+                    warn!(
+                        "Changes to logging and system tray configuration \
+                           are ignored when restart_on_cfg_change is 'Reload'."
+                    );
+                }
+            }
         }
+        {
+            // Locking die arc...
+            let die = die_arc.lock().unwrap();
+            if *die {
+                break;
+            }
+        } // Locking die arc...
     } // Loop inotify
 }
