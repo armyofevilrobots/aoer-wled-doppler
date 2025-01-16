@@ -51,7 +51,12 @@ fn bootstrap() -> Result<PathBuf> {
                     },
                 ],
             )]),
-            restart_on_cfg_change: false,
+            restart_on_cfg_change: CfgChangeAction::No,
+            tray_icon: false,
+            bind_address: Some("localhost:3178".to_string()),
+            vis_schedule: None,
+            config_path: Some(cfgpath.clone()),
+
         };
         let cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
             .expect("Wups, my default config is borked?!");
@@ -78,8 +83,9 @@ pub fn load_config(cfg_path: Option<PathBuf>) -> Result<Config> {
         Some(cfgpath) => cfgpath,
         None => bootstrap()?,
     };
-    let cfgfile = std::fs::read_to_string(cfgdir)?;
-    let cfg: Config = ron::de::from_bytes(cfgfile.as_bytes())?;
+    let cfgfile = std::fs::read_to_string(&cfgdir)?;
+    let mut cfg: Config = ron::de::from_bytes(cfgfile.as_bytes())?;
+    cfg.config_path = Some(cfgdir.clone());
     Ok(cfg)
 }
 

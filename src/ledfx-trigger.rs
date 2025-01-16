@@ -31,8 +31,6 @@ const SERVICE_NAME: &str = "_wled._tcp.local.";
 // const NO_SCHEDULE: LEDScheduleSpec = LEDScheduleSpec::None;
 
 fn main() {
-    let mut found_wled: HashMap<String, WLED> = HashMap::new();
-
     let args = Args::parse();
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
@@ -102,13 +100,12 @@ fn main() {
     }
 
     info!("==========================================================");
-    info!("= aoer-wled-doppler starting. Scanning for WLED devices...");
+    info!("= ledfx-trigger booting...");
     info!("==========================================================");
     info!("Loaded config: {:?}", &svc_config);
 
     util::cfg_logging(svc_config.loglevel, svc_config.logfile.clone());
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
-    let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
 
 
@@ -175,144 +172,7 @@ fn main() {
             } else {
                 debug!("No LEDFX url found. Skipping updates.");
             }
-            while !receiver.is_empty() {
-                if let Ok(event) = receiver.recv() {
-                    match event {
-                        ServiceEvent::ServiceResolved(info) => {
-                            let _ = update_wled_cache(&info, &mut found_wled); // TODO: Fix this<--
-                        }
-                        other_event => {
-                            trace!("At {:?} : {:?}", now.elapsed(), &other_event);
-                        }
-                    }
-                }
-            }
 
-            let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
-            let mut leds_ok: usize = 0;
-            let mut leds_noconfig: usize = 0;
-            let leds_ignore: usize = 0;
-            let mut leds_err: usize = 0;
-            debug!(
-                "Found devices: {:?}",
-                found_wled.keys().cloned().collect::<Vec<String>>()
-            );
-
-            for (name, wled) in found_wled.iter_mut() {
-                debug!("Processing {}", name);
-                if let Some(led_bri_config) = svc_config.leds.get(name) {
-                    debug!("Found BRI config for LED: {}", name);
-                    if !matches!(led_bri_config.schedule, LEDScheduleSpec::None) {
-                        let schedule_name = match led_bri_config.schedule.clone() {
-                            LEDScheduleSpec::Default => "default".to_string(),
-                            LEDScheduleSpec::ByName(foo) => foo.clone(),
-                            _ => panic!("How TF did we get past the guard?!"),
-                        };
-                        debug!("Found valid schedule spec for LED: {}", name);
-                        // Determine which schedule to use for this LED
-                        if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
-                            // Yay, a match. figure out the dimming.
-                            debug!("Found a working schedule for spec: {:?}", &led_schedule);
-                            let (dim_pc, preset_id, power_state) = calc_led_state_scheduled(
-                                today,
-                                svc_config.lat as f64,
-                                svc_config.lon as f64,
-                                led_schedule,
-                            );
-                            debug!("Got dim/preset result of ({:?}, {:?}) for {}",
-                                   &dim_pc, &preset_id, &name);
-
-                            if let Some(id) = preset_id {
-                                debug!("Setting LED {} to preset {}", name, id);
-                                if let Ok(_) = wled.device.get_state_from_wled() {
-                                    if let Some(state) = &wled.device.state {
-                                        if state.ps != Some(id as i32) {
-                                            match led_set_preset(wled, id) {
-                                                Ok(_) => (),
-                                                Err(err) => error!(
-                                                    "Failed to set {} preset to {} : {:?}",
-                                                    name, id, err
-                                                ),
-                                            }
-                                        } else {
-                                            debug!(
-                                                "Found matching preset state already for {}:{}",
-                                                name, id
-                                            );
-                                        }
-                                    }else{
-                                        warn!("LED {} has no state data.", name);
-                                    }
-                                }else{
-                                    error!("Failed to get current LED state for {}.",name);
-                                }
-                            }else{
-                                debug!("No preset ID set for wled {} now.", name)
-                            }
-
-                            debug!("Dim_PC is {}", dim_pc);
-
-                            let gap =
-                                ((led_bri_config.max_bri - led_bri_config.min_bri) as f32).abs();
-                            let out = ((gap * dim_pc) + led_bri_config.min_bri as f32)
-                                .max(0.)
-                                .min(255.) as u8;
-                            debug!(
-                                "Setting LED:{} to BRI{} (min:{},max:{},dim:{})",
-                                name, out, led_bri_config.min_bri, led_bri_config.max_bri, dim_pc
-                            );
-                            let result = led_set_brightness(wled, out);
-                            if result.is_err() {
-                                error!(
-                                    "Failed to update LED:{} with err:{:?}",
-                                    name,
-                                    result.err().unwrap()
-                                );
-                                leds_err += 1;
-                            } else {
-                                leds_ok += 1;
-                            }
-                        } else {
-                            panic!(
-                                "Could not find brightness schedule {} in config for LED {}",
-                                &schedule_name, &name
-                            );
-                        }; // Got the schedule
-                    } else {
-                        warn!("LED: {} configured for no management.", name);
-                    }; // if matches(led_config_None)
-
-                // leds_ok += 1;
-                } else {
-                    leds_noconfig += 1;
-                } // if let some(bri_wled_config)
-            } // for (name,wled) in found wleds.
-            if leds_ok == found_wled.len() {
-                info!(
-                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
-                    leds_ok,
-                    leds_ignore,
-                    leds_noconfig,
-                    leds_err,
-                    found_wled.len()
-                );
-            } else {
-                warn!(
-                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
-                    leds_ok,
-                    leds_ignore,
-                    leds_noconfig,
-                    leds_err,
-                    found_wled.len()
-                );
-            }
-            {
-                // Locking die arc...
-                let die = die_arc.lock().unwrap();
-                if *die {
-                    break;
-                }
-            } // Locking die arc...
 
             //std::thread::sleep(Duration::from_secs(10));
             std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
