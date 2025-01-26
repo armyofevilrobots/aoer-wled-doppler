@@ -55,13 +55,14 @@ fn main() {
         }
     };
 
-
     let die_arc: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let die_arc_thread = die_arc.clone();
     let tray_svc_config = svc_config.clone();
+    let mut ledfx_enabled: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
+    let mut ledfx_enabled_moved = ledfx_enabled.clone();
     if svc_config.tray_icon {
         info!("Starting up tray icon...");
-        let (config_msg, exit_msg) = systray::launch_taskbar_icon();
+        let (config_msg, exit_msg, enabled_msg) = systray::launch_taskbar_icon();
 
         thread::spawn(move || loop {
             if let Ok(event) = TrayIconEvent::receiver().try_recv() {
@@ -70,6 +71,17 @@ fn main() {
 
             if let Ok(event) = MenuEvent::receiver().try_recv() {
                 println!("tray event: {event:?}");
+                if let Ok(qid) = enabled_msg.lock() {
+                    info!("Enabled ledfx is toggled.");
+                    //ledfx_enabled = !ledfx_enabled;
+                    {
+                        let mut enabled = ledfx_enabled_moved
+                            .lock()
+                            .expect("Failed to lock enabled message");
+                        *enabled = !*enabled;
+                    }
+                    //println!("Switched to: {}", &ledfx_enabled);
+                }
                 if let Ok(qid) = exit_msg.lock() {
                     if let Some(menuid) = qid.as_ref() {
                         if menuid == event.id() {
@@ -83,13 +95,12 @@ fn main() {
                 if let Ok(cid) = config_msg.lock() {
                     if let Some(menuid) = cid.as_ref() {
                         if menuid == event.id() {
-                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone(){
+                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone() {
                                 // Rewrite the URL if we bound everything.
-                                *urlbase = urlbase.replace("0.0.0.0", "localhost"); 
+                                *urlbase = urlbase.replace("0.0.0.0", "localhost");
                                 info!("Launching browser...");
                                 opener::open_browser(format!("http://{}/", urlbase))
-                                    .unwrap_or_else(|_|warn!("Failed to launch browser."));
-                                
+                                    .unwrap_or_else(|_| warn!("Failed to launch browser."));
                             }
                         }
                     }
@@ -108,14 +119,12 @@ fn main() {
     let mdns = ServiceDaemon::new().expect("Failed to create daemon");
     // let mut last_update = std::time::Instant::now();
 
-
     ///// Webserver
-    if let Some(server_bind) = &svc_config.bind_address{
+    if let Some(server_bind) = &svc_config.bind_address {
         info!("Spawning webserver: {}", &server_bind);
         let cfg = svc_config.clone();
-        thread::spawn(move||webui::spawn(cfg));
-        
-    }else{
+        thread::spawn(move || webui::spawn(cfg));
+    } else {
         info!("No bind config, not spawning webserver.");
     }
     ///// /Webserver
@@ -130,7 +139,8 @@ fn main() {
 
     let mut quiet_cycles: usize = 0;
     let mut inotify_buffer = [0u8; 4096];
-    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> = HashMap::new();
+    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> =
+        HashMap::new();
     loop {
         loop {
             info!("Checking inotify events...");
@@ -154,10 +164,13 @@ fn main() {
                 quiet_cycles =
                     (quiet_cycles + 1).min(&svc_config.ledfx_idle_cycles.unwrap_or(3) + 1);
             }
-
             if let Some(baseurl) = &svc_config.ledfx_url {
-                debug!("Got LEDFX url of {}", baseurl);
-                if quiet_cycles >= svc_config.ledfx_idle_cycles.unwrap_or(3) {
+                let ledfx_enabled_locked = ledfx_enabled.lock().expect("Failed to unlock");
+                info!("Enabled is set to: {}", ledfx_enabled_locked);
+                info!("Got LEDFX url of {}", baseurl);
+                if quiet_cycles >= svc_config.ledfx_idle_cycles.unwrap_or(3)
+                    || !*ledfx_enabled_locked
+                {
                     // Again, arbitrary
                     debug!("We have been quiet for a couple cycles.");
                     playpause(baseurl.as_str(), true).unwrap_or_else(|_| {
@@ -173,6 +186,137 @@ fn main() {
                 debug!("No LEDFX url found. Skipping updates.");
             }
 
+            let today: chrono::DateTime<chrono::Local> = chrono::Local::now();
+            let mut leds_ok: usize = 0;
+            let mut leds_noconfig: usize = 0;
+            let leds_ignore: usize = 0;
+            let mut leds_err: usize = 0;
+            /*
+            debug!(
+                "Found devices: {:?}",
+                found_wled.keys().cloned().collect::<Vec<String>>()
+            );
+            */
+
+            /*
+            for (name, wled) in found_wled.iter_mut() {
+                debug!("Processing {}", name);
+                if let Some(led_bri_config) = svc_config.leds.get(name) {
+                    debug!("Found BRI config for LED: {}", name);
+                    if !matches!(led_bri_config.schedule, LEDScheduleSpec::None) {
+                        let schedule_name = match led_bri_config.schedule.clone() {
+                            LEDScheduleSpec::Default => "default".to_string(),
+                            LEDScheduleSpec::ByName(foo) => foo.clone(),
+                            _ => panic!("How TF did we get past the guard?!"),
+                        };
+                        debug!("Found valid schedule spec for LED: {}", name);
+                        // Determine which schedule to use for this LED
+                        if let Some(led_schedule) = svc_config.schedule.get(&schedule_name) {
+                            // Yay, a match. figure out the dimming.
+                            debug!("Found a working schedule for spec: {:?}", &led_schedule);
+                            let (dim_pc, preset_id, power_state) = calc_led_state_scheduled(
+                                today,
+                                svc_config.lat as f64,
+                                svc_config.lon as f64,
+                                led_schedule,
+                            );
+                            debug!(
+                                "Got dim/preset result of ({:?}, {:?}) for {}",
+                                &dim_pc, &preset_id, &name
+                            );
+
+                            if let Some(id) = preset_id {
+                                debug!("Setting LED {} to preset {}", name, id);
+                                if let Ok(_) = wled.device.get_state_from_wled() {
+                                    if let Some(state) = &wled.device.state {
+                                        if state.ps != Some(id as i32) {
+                                            match led_set_preset(wled, id) {
+                                                Ok(_) => (),
+                                                Err(err) => error!(
+                                                    "Failed to set {} preset to {} : {:?}",
+                                                    name, id, err
+                                                ),
+                                            }
+                                        } else {
+                                            debug!(
+                                                "Found matching preset state already for {}:{}",
+                                                name, id
+                                            );
+                                        }
+                                    } else {
+                                        warn!("LED {} has no state data.", name);
+                                    }
+                                } else {
+                                    error!("Failed to get current LED state for {}.", name);
+                                }
+                            } else {
+                                debug!("No preset ID set for wled {} now.", name)
+                            }
+
+                            debug!("Dim_PC is {}", dim_pc);
+
+                            let gap =
+                                ((led_bri_config.max_bri - led_bri_config.min_bri) as f32).abs();
+                            let out = ((gap * dim_pc) + led_bri_config.min_bri as f32)
+                                .max(0.)
+                                .min(255.) as u8;
+                            debug!(
+                                "Setting LED:{} to BRI{} (min:{},max:{},dim:{})",
+                                name, out, led_bri_config.min_bri, led_bri_config.max_bri, dim_pc
+                            );
+                            let result = led_set_brightness(wled, out);
+                            if result.is_err() {
+                                error!(
+                                    "Failed to update LED:{} with err:{:?}",
+                                    name,
+                                    result.err().unwrap()
+                                );
+                                leds_err += 1;
+                            } else {
+                                leds_ok += 1;
+                            }
+                        } else {
+                            panic!(
+                                "Could not find brightness schedule {} in config for LED {}",
+                                &schedule_name, &name
+                            );
+                        }; // Got the schedule
+                    } else {
+                        warn!("LED: {} configured for no management.", name);
+                    }; // if matches(led_config_None)
+
+                // leds_ok += 1;
+                } else {
+                    leds_noconfig += 1;
+                } // if let some(bri_wled_config)
+            } // for (name,wled) in found wleds.
+            if leds_ok == found_wled.len() {
+                info!(
+                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
+                    leds_ok,
+                    leds_ignore,
+                    leds_noconfig,
+                    leds_err,
+                    found_wled.len()
+                );
+            } else {
+                warn!(
+                    "({}:OK, {}:IGNORE, {}:NOCFG, {}:ERR) out of {} WLEDs processed.",
+                    leds_ok,
+                    leds_ignore,
+                    leds_noconfig,
+                    leds_err,
+                    found_wled.len()
+                );
+            }
+            */
+            {
+                // Locking die arc...
+                let die = die_arc.lock().unwrap();
+                if *die {
+                    break;
+                }
+            } // Locking die arc...
 
             //std::thread::sleep(Duration::from_secs(10));
             std::thread::sleep(Duration::from_secs_f64(svc_config.cycle_seconds));
