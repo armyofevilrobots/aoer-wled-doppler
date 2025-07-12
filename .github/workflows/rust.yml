@@ -23,7 +23,7 @@ jobs:
         with:
           packages: build-essential libatk1.0-0 libatk1.0-dev libpango1.0-0
             libpango1.0-dev libasound2-dev libasound2-data libasound2
-            libglib2.0-0 libglib2.0-dev libgtk-3-dev
+            libglib2.0-0 libglib2.0-dev libgtk-3-dev libxdo-dev xdotool
           version: 1.0
       - uses: actions/checkout@v4
       - name: Run tests
