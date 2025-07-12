@@ -2,16 +2,16 @@
 name = "aoer-wled-doppler"
 version = "0.3.0"
 edition = "2021"
-default-run="aoer-wled-doppler"
+# default-run = "aoer-wled-doppler"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-jack=["cpal/jack"]
+jack = ["cpal/jack"]
 
 
-[[bin]]
-name = "aoer-wled-doppler"
-path = "src/main.rs"
+#[[bin]]
+#name = "aoer-wled-doppler"
+#path = "src/main.rs"
 
 [[bin]]
 name = "ledfx-trigger"
@@ -29,15 +29,15 @@ mdns-sd = "0.10.4"
 dirs = "5.0.1"
 anyhow = "1.0.79"
 sunrise = "1.0.0"
-chrono = { version="0.4.38", features = ["serde"]}
+chrono = { version = "0.4.38", features = ["serde"] }
 fern = { version = "0.6.2", features = ["colored"] }
 serde = "1.0.204"
 humantime = "2.1.0"
 log = "0.4.22"
 ron = "0.8.1"
-cpal = { version = "0.15.3"}
+cpal = { version = "0.15.3" }
 ringbuf = "0.4.1"
-ureq = {version="2.10.0", features=["json"]}
+ureq = { version = "2.10.0", features = ["json"] }
 serde_json = "1.0.121"
 clap = { version = "4.5.20", features = ["derive"] }
 tray-icon = "0.19.1"
@@ -53,4 +53,3 @@ astra = "0.4.0"
 matchit = "0.8.5"
 http = "1.1.0"
 lazy_static = "1.5.0"
-

@@ -21,7 +21,6 @@ mod monitor;
 mod systray;
 mod types;
 mod util;
-mod webui;
 use crate::config::{calc_actual_config_file, load_config};
 use crate::ledfx::playpause;
 use crate::types::*;
@@ -137,13 +136,13 @@ fn main() {
     // let mut last_update = std::time::Instant::now();
 
     ///// Webserver
-    if let Some(server_bind) = &svc_config.bind_address {
-        info!("Spawning webserver: {}", &server_bind);
-        let cfg = svc_config.clone();
-        thread::spawn(move || webui::spawn(cfg));
-    } else {
-        info!("No bind config, not spawning webserver.");
-    }
+    // if let Some(server_bind) = &svc_config.bind_address {
+    //     info!("Spawning webserver: {}", &server_bind);
+    //     let cfg = svc_config.clone();
+    //     thread::spawn(move || webui::spawn(cfg));
+    // } else {
+    //     info!("No bind config, not spawning webserver.");
+    // }
     ///// /Webserver
 
     // OK, now we setup the monitoring...
