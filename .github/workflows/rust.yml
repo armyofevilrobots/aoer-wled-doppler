@@ -35,9 +35,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
       - name: move build
-        run: mv ./target/release/aoer-wled-doppler ./
+        run: mv ./target/release/ledfx-trigger ./
       - name: Zip
-        run: zip -r ${{ github.event.repository.name }}-${{ github.ref_name}}-${{ runner.os }}-${{ runner.arch }}.zip README.md systemd/wled-doppler.service aoer-wled-doppler
+        run: zip -r ${{ github.event.repository.name }}-${{ github.ref_name}}-${{ runner.os }}-${{ runner.arch }}.zip README.md ledfx-trigger
       - name: Upload Release Asset
         id: upload-release-asset
         uses: actions/upload-release-asset@v1
