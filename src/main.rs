@@ -57,13 +57,12 @@ fn main() {
         }
     };
 
-
     let die_arc: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let die_arc_thread = die_arc.clone();
     let tray_svc_config = svc_config.clone();
     if svc_config.tray_icon {
         info!("Starting up tray icon...");
-        let (config_msg, exit_msg) = systray::launch_taskbar_icon();
+        let (config_msg, exit_msg, enabled_msg) = systray::launch_taskbar_icon();
 
         thread::spawn(move || loop {
             if let Ok(event) = TrayIconEvent::receiver().try_recv() {
@@ -85,13 +84,12 @@ fn main() {
                 if let Ok(cid) = config_msg.lock() {
                     if let Some(menuid) = cid.as_ref() {
                         if menuid == event.id() {
-                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone(){
+                            if let Some(urlbase) = &mut tray_svc_config.bind_address.clone() {
                                 // Rewrite the URL if we bound everything.
-                                *urlbase = urlbase.replace("0.0.0.0", "localhost"); 
+                                *urlbase = urlbase.replace("0.0.0.0", "localhost");
                                 info!("Launching browser...");
                                 opener::open_browser(format!("http://{}/", urlbase))
-                                    .unwrap_or_else(|_|warn!("Failed to launch browser."));
-                                
+                                    .unwrap_or_else(|_| warn!("Failed to launch browser."));
                             }
                         }
                     }
@@ -111,14 +109,12 @@ fn main() {
     let receiver = mdns.browse(SERVICE_NAME).expect("Failed to browse");
     // let mut last_update = std::time::Instant::now();
 
-
     ///// Webserver
-    if let Some(server_bind) = &svc_config.bind_address{
+    if let Some(server_bind) = &svc_config.bind_address {
         info!("Spawning webserver: {}", &server_bind);
         let cfg = svc_config.clone();
-        thread::spawn(move||webui::spawn(cfg));
-        
-    }else{
+        thread::spawn(move || webui::spawn(cfg));
+    } else {
         info!("No bind config, not spawning webserver.");
     }
     ///// /Webserver
@@ -133,7 +129,8 @@ fn main() {
 
     let mut quiet_cycles: usize = 0;
     let mut inotify_buffer = [0u8; 4096];
-    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> = HashMap::new();
+    let mut last_command_by_name: HashMap<String, (f32, Option<u16>, Option<bool>)> =
+        HashMap::new();
     loop {
         loop {
             info!("Checking inotify events...");
@@ -219,8 +216,10 @@ fn main() {
                                 svc_config.lon as f64,
                                 led_schedule,
                             );
-                            debug!("Got dim/preset result of ({:?}, {:?}) for {}",
-                                   &dim_pc, &preset_id, &name);
+                            debug!(
+                                "Got dim/preset result of ({:?}, {:?}) for {}",
+                                &dim_pc, &preset_id, &name
+                            );
 
                             if let Some(id) = preset_id {
                                 debug!("Setting LED {} to preset {}", name, id);
@@ -240,13 +239,13 @@ fn main() {
                                                 name, id
                                             );
                                         }
-                                    }else{
+                                    } else {
                                         warn!("LED {} has no state data.", name);
                                     }
-                                }else{
-                                    error!("Failed to get current LED state for {}.",name);
+                                } else {
+                                    error!("Failed to get current LED state for {}.", name);
                                 }
-                            }else{
+                            } else {
                                 debug!("No preset ID set for wled {} now.", name)
                             }
 

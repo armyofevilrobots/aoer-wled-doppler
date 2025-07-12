@@ -56,7 +56,7 @@ fn bootstrap() -> Result<PathBuf> {
             bind_address: Some("localhost:3178".to_string()),
             vis_schedule: None,
             config_path: Some(cfgpath.clone()),
-
+            ledfx_schedule: Default::default(),
         };
         let cfgstr = ron::ser::to_string_pretty(&tmpconfig, ron::ser::PrettyConfig::default())
             .expect("Wups, my default config is borked?!");
@@ -66,15 +66,14 @@ fn bootstrap() -> Result<PathBuf> {
     Ok(cfgpath)
 }
 
-pub fn calc_actual_config_file(cfg_path: Option<PathBuf>)-> PathBuf{
-    
+pub fn calc_actual_config_file(cfg_path: Option<PathBuf>) -> PathBuf {
     match cfg_path {
         Some(tmp_path) => tmp_path,
         None => {
             let mut tmp_path = calc_config_dir();
             tmp_path.push("config.ron");
             tmp_path
-        },
+        }
     }
 }
 
@@ -93,7 +92,6 @@ pub fn load_config(cfg_path: Option<PathBuf>) -> Result<Config> {
 /* These tests are f%^(@*# awful, because they mutate files. */
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_setup_homedir() {

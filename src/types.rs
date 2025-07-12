@@ -1,4 +1,4 @@
-use chrono::Datelike;
+use chrono::{Datelike, NaiveTime};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -19,7 +19,7 @@ pub(crate) struct Args {
 }
 
 #[derive(Debug)]
-pub enum Device{
+pub enum Device {
     Wled(Wled),
     Tasmota,
 }
@@ -64,9 +64,7 @@ impl ScheduleTime {
         let today_date = today_date.date();
         match self {
             Self::Time(time) => {
-                let today_date = today_date
-                    .and_time(*time)
-                    .expect("Invalid input time");
+                let today_date = today_date.and_time(*time).expect("Invalid input time");
                 today_date.timestamp() as u64
             }
             Self::Sunrise => {
@@ -184,18 +182,23 @@ impl Default for LEDBrightnessConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
-pub enum CfgChangeAction{
+pub enum CfgChangeAction {
     #[default]
     No,
     Exit,
     Reload,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct VisualizationSchedule{
+pub struct VisualizationSchedule {
     pub start: ScheduleTime,
     pub end: ScheduleTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LedFxSchedule {
+    pub from: ScheduleTime,
+    pub until: ScheduleTime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -211,26 +214,51 @@ pub struct Config {
     pub audio_config: Option<AudioConfig>,
     pub ledfx_url: Option<String>,
     pub ledfx_idle_cycles: Option<usize>,
+    pub ledfx_schedule: Option<LedFxSchedule>,
     #[serde(default = "default_cycle")]
     pub cycle_seconds: f64,
     #[serde(default = "default_schedule")]
     pub schedule: HashMap<String, WLEDSchedule>,
-    #[serde(default="default_cfg_change")]
+    #[serde(default = "default_cfg_change")]
     pub restart_on_cfg_change: CfgChangeAction,
-    #[serde(default="default_tray_icon")]
+    #[serde(default = "default_tray_icon")]
     pub tray_icon: bool,
     pub bind_address: Option<String>,
     pub vis_schedule: Option<VisualizationSchedule>,
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
-    
 }
 
-fn default_cfg_change()->CfgChangeAction{
+impl Config {
+    pub fn next_ledfx_transition(&self) -> Option<(ScheduleTime, Option<bool>)> {
+        match self.ledfx_schedule.clone() {
+            Some(ledfx_schedule) => {
+                let from_ts = ledfx_schedule
+                    .from
+                    .to_timestamp(self.lat as f64, self.lon as f64);
+                let until_ts = ledfx_schedule
+                    .until
+                    .to_timestamp(self.lat as f64, self.lon as f64);
+                if chrono::Local::now().timestamp() < from_ts as i64 {
+                    Some((ledfx_schedule.from.clone(), Some(true)))
+                } else if chrono::Local::now().timestamp() < until_ts as i64 {
+                    Some((ledfx_schedule.until.clone(), Some(false)))
+                } else {
+                    //let tomorrow_midnight = (now + Duration::days(1)).date().and_hms(0, 0, 0);
+                    Some((ScheduleTime::Time(NaiveTime::from_hms(23, 59, 59)), None))
+                    // No more transitions tonight
+                }
+            }
+            None => None,
+        }
+    }
+}
+
+fn default_cfg_change() -> CfgChangeAction {
     CfgChangeAction::No
 }
 
-fn default_tray_icon()-> bool{
+fn default_tray_icon() -> bool {
     false
 }
 
@@ -268,6 +296,7 @@ impl Default for Config {
             audio_config: Default::default(),
             ledfx_url: Default::default(),
             ledfx_idle_cycles: Default::default(),
+            ledfx_schedule: Default::default(),
             cycle_seconds: Default::default(),
             schedule: default_schedule(),
             restart_on_cfg_change: default_cfg_change(),
